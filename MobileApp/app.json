@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "রসুইঘর",
+    "slug": "rosuighor",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/logo.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FAF7F2"
+    },
+    "scheme": "rosuighor",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.iffat.rosuighor"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/logo.png",
+        "backgroundColor": "#0D382B"
+      },
+      "package": "com.iffat.rosuighor"
+    }
+  }
+}
