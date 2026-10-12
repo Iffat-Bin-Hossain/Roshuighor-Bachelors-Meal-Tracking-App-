@@ -3,7 +3,7 @@ import {
   Sun, Moon, Globe, LogOut, Home as HomeIcon, Users, Plus,
   Share2, Check, DollarSign, Utensils, ShoppingBag,
   TrendingUp, Copy, CheckCircle2, AlertCircle, ArrowRight,
-  Eye, EyeOff
+  Eye, EyeOff, Coffee, Edit3
 } from 'lucide-react';
 import { translations, type Language } from './i18n';
 import { apiFetch, getAuthToken, setAuthToken } from './api';
@@ -49,6 +49,17 @@ interface MemberCalculation {
   mealCost: number;
   balance: number;
   status: 'surplus' | 'due';
+}
+
+interface DailyMenu {
+  id?: number;
+  mess_cycle_id: number;
+  date: string;
+  meal_type: 'breakfast' | 'lunch' | 'dinner';
+  staple: string;
+  main_dish: string;
+  side_dish: string;
+  notes?: string;
 }
 
 export function App() {
@@ -99,6 +110,16 @@ export function App() {
   const [mealRecords, setMealRecords] = useState<any[]>([]);
   const [cycleDates, setCycleDates] = useState<string[]>([]);
   const [quickDate, setQuickDate] = useState(new Date().toISOString().split('T')[0]);
+
+  // Daily Menus (Staple, Main Dish, Side Dish for Breakfast, Lunch, Dinner)
+  const [dailyMenus, setDailyMenus] = useState<DailyMenu[]>([]);
+  const [showMenuModal, setShowMenuModal] = useState(false);
+  const [menuModalDate, setMenuModalDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [menuForm, setMenuForm] = useState({
+    breakfast: { staple: '', main_dish: '', side_dish: '' },
+    lunch: { staple: '', main_dish: '', side_dish: '' },
+    dinner: { staple: '', main_dish: '', side_dish: '' }
+  });
 
   // Bazaar
   const [bazaarList, setBazaarList] = useState<any[]>([]);
@@ -229,11 +250,73 @@ export function App() {
         setCycleDates(detailRes.dates);
       }
       loadMealRecords(mess.id);
+      loadDailyMenus(mess.id);
       loadBazaar(mess.id);
       loadDeposits(mess.id);
       loadSummary(mess.id);
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const loadDailyMenus = async (messId: number) => {
+    try {
+      const res = await apiFetch(`/meals/${messId}/menu`);
+      if (res.success) {
+        setDailyMenus(res.menus);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const openMenuModal = (dateStr: string) => {
+    setMenuModalDate(dateStr);
+    const b = dailyMenus.find(m => m.date.split('T')[0] === dateStr && m.meal_type === 'breakfast');
+    const l = dailyMenus.find(m => m.date.split('T')[0] === dateStr && m.meal_type === 'lunch');
+    const d = dailyMenus.find(m => m.date.split('T')[0] === dateStr && m.meal_type === 'dinner');
+    setMenuForm({
+      breakfast: { staple: b?.staple || '', main_dish: b?.main_dish || '', side_dish: b?.side_dish || '' },
+      lunch: { staple: l?.staple || '', main_dish: l?.main_dish || '', side_dish: l?.side_dish || '' },
+      dinner: { staple: d?.staple || '', main_dish: d?.main_dish || '', side_dish: d?.side_dish || '' }
+    });
+    setShowMenuModal(true);
+  };
+
+  const handleSaveMenu = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentMess || !menuModalDate) return;
+    try {
+      await Promise.all([
+        apiFetch(`/meals/${currentMess.id}/menu`, {
+          method: 'POST',
+          body: JSON.stringify({
+            date: menuModalDate,
+            meal_type: 'breakfast',
+            ...menuForm.breakfast
+          })
+        }),
+        apiFetch(`/meals/${currentMess.id}/menu`, {
+          method: 'POST',
+          body: JSON.stringify({
+            date: menuModalDate,
+            meal_type: 'lunch',
+            ...menuForm.lunch
+          })
+        }),
+        apiFetch(`/meals/${currentMess.id}/menu`, {
+          method: 'POST',
+          body: JSON.stringify({
+            date: menuModalDate,
+            meal_type: 'dinner',
+            ...menuForm.dinner
+          })
+        })
+      ]);
+      await loadDailyMenus(currentMess.id);
+      setShowMenuModal(false);
+    } catch (err: any) {
+      alert(err.message || 'Failed to save menu');
     }
   };
 
@@ -947,114 +1030,94 @@ export function App() {
       <header style={{
         background: 'var(--bg-card)',
         borderBottom: '1px solid var(--border-color)',
-        padding: '10px 20px',
+        padding: '12px 32px',
         position: 'sticky',
         top: 0,
         zIndex: 50
       }}>
         <div style={{
-          maxWidth: 1180,
+          maxWidth: 1440,
           margin: '0 auto',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          gap: 12
+          gap: 16
         }}>
-          {/* Brand Logo & Title */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Brand Logo & Subtitle */}
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            userSelect: 'none'
+          }}>
             <img
               src={theme === 'dark' ? '/logo-dark-transparent.png' : '/logo-transparent.png'}
               alt="রসুইঘর"
               style={{
-                height: 42,
+                height: 52,
                 width: 'auto',
                 objectFit: 'contain',
-                display: 'block'
+                display: 'block',
+                filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.06))'
               }}
             />
-            <div>
-              <h1 style={{
-                fontSize: 18,
-                fontWeight: 800,
-                color: 'var(--brand-green)',
-                lineHeight: 1.1,
-                letterSpacing: '-0.3px',
-                margin: 0
-              }}>
-                রসুইঘর
-              </h1>
-              <p style={{
-                fontSize: 10,
-                fontWeight: 600,
-                color: 'var(--brand-terracotta)',
-                margin: 0,
-                lineHeight: 1.1
-              }}>
-                {t.appSubtitle}
-              </p>
-            </div>
+            <span style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: 'var(--brand-terracotta)',
+              margin: '3px 0 0',
+              lineHeight: 1.1,
+              letterSpacing: '0.4px',
+              textAlign: 'center'
+            }}>
+              {t.appSubtitle}
+            </span>
           </div>
 
           {/* Home Switcher Dropdown */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {homes.length > 0 ? (
-              <select
-                value={currentHome?.id || ''}
-                onChange={(e) => {
-                  const selected = homes.find(h => h.id === parseInt(e.target.value, 10));
-                  if (selected) selectHome(selected);
-                }}
-                style={{
-                  background: 'var(--bg-card-subtle)',
-                  color: 'var(--text-main)',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: 'var(--radius-sm)',
-                  padding: '6px 12px',
-                  fontSize: 13,
-                  fontWeight: 600
-                }}>
-                {homes.map(h => (
-                  <option key={h.id} value={h.id}>{h.name}</option>
-                ))}
-              </select>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <HomeIcon size={16} color="var(--brand-green)" />
+                <select
+                  value={currentHome?.id || ''}
+                  onChange={(e) => {
+                    if (e.target.value === '__new_home__') {
+                      setShowCreateHomeModal(true);
+                    } else if (e.target.value === '__join_home__') {
+                      setShowJoinModal(true);
+                    } else {
+                      const selected = homes.find(h => h.id === parseInt(e.target.value, 10));
+                      if (selected) selectHome(selected);
+                    }
+                  }}
+                  style={{
+                    background: 'var(--bg-card-subtle)',
+                    color: 'var(--text-main)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 'var(--radius-sm)',
+                    padding: '7px 14px',
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}>
+                  {homes.map(h => (
+                    <option key={h.id} value={h.id}>{h.name}</option>
+                  ))}
+                  <option disabled>──────────</option>
+                  <option value="__new_home__">+ {t.createHomeBtn.replace(/^\+\s*/, '')}</option>
+                  <option value="__join_home__">🔗 {t.joinHomeBtn}</option>
+                </select>
+              </div>
             ) : null}
-
-            <button
-              onClick={() => setShowCreateHomeModal(true)}
-              title={t.instCreateHome}
-              style={{
-                background: 'var(--brand-green-soft)',
-                color: 'var(--brand-green)',
-                padding: '6px 10px',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: 12,
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 4
-              }}>
-              <Plus size={14} /> {t.createHomeBtn}
-            </button>
-
-            <button
-              onClick={() => setShowJoinModal(true)}
-              title={t.instJoinHome}
-              style={{
-                background: 'var(--bg-card-subtle)',
-                color: 'var(--text-muted)',
-                padding: '6px 10px',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: 12,
-                fontWeight: 500
-              }}>
-              {t.joinHomeBtn}
-            </button>
           </div>
 
-          {/* Right Controls: Theme, Language, Profile */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Right Controls: Theme, Language, Profile, UI-Compatible Logout */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <button
               onClick={toggleLanguage}
+              title="Change Language"
               style={{
                 padding: '6px 10px',
                 borderRadius: 'var(--radius-sm)',
@@ -1063,43 +1126,98 @@ export function App() {
                 color: 'var(--text-main)',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 4
+                gap: 4,
+                cursor: 'pointer',
+                background: 'var(--bg-card)'
               }}>
               <Globe size={13} /> {lang === 'bn' ? 'EN' : 'বাং'}
             </button>
 
             <button
               onClick={toggleTheme}
+              title="Toggle Theme"
               style={{
                 padding: 7,
                 borderRadius: 'var(--radius-sm)',
                 border: '1px solid var(--border-color)',
-                color: 'var(--text-main)'
+                color: 'var(--text-main)',
+                cursor: 'pointer',
+                background: 'var(--bg-card)'
               }}>
               {theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
             </button>
 
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              background: 'var(--bg-card-subtle)',
-              padding: '4px 10px',
-              borderRadius: 'var(--radius-full)',
-              fontSize: 13,
-              fontWeight: 500
-            }}>
+            {/* User Profile Badge (Separate from Logout) */}
+            <div
+              title={user.email}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                padding: '5px 12px',
+                background: 'var(--bg-card-subtle)',
+                borderRadius: 'var(--radius-full)',
+                border: '1px solid var(--border-color)',
+                fontSize: 13,
+                fontWeight: 600,
+                color: 'var(--text-main)'
+              }}>
+              <span style={{
+                width: 20,
+                height: 20,
+                borderRadius: '50%',
+                background: 'var(--brand-green)',
+                color: '#FFFFFF',
+                fontSize: 11,
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                textTransform: 'uppercase'
+              }}>
+                {user.name ? user.name.trim().charAt(0) : 'U'}
+              </span>
               <span>{user.name.split(' ')[0]}</span>
-              <button onClick={handleLogout} title={t.logout} style={{ color: 'var(--text-muted)', display: 'flex' }}>
-                <LogOut size={14} />
-              </button>
             </div>
+
+            {/* UI-Compatible Logout Button */}
+            <button
+              onClick={handleLogout}
+              title={t.logout}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '6px 12px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border-color)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-muted)',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'var(--transition)'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = '#dc2626';
+                e.currentTarget.style.borderColor = 'rgba(220, 38, 38, 0.4)';
+                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.06)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = 'var(--text-muted)';
+                e.currentTarget.style.borderColor = 'var(--border-color)';
+                e.currentTarget.style.background = 'var(--bg-card)';
+              }}
+            >
+              <LogOut size={14} />
+              <span>{t.logout}</span>
+            </button>
           </div>
         </div>
       </header>
 
       {/* Main Container */}
-      <main style={{ maxWidth: 1180, width: '100%', margin: '0 auto', padding: '16px 20px', flex: 1 }}>
+      <main style={{ maxWidth: 1440, width: '100%', margin: '0 auto', padding: '20px 32px', flex: 1 }}>
         
         {/* If no home created yet */}
         {homes.length === 0 ? (
@@ -1330,82 +1448,338 @@ export function App() {
                   justifyContent: 'space-between',
                   gap: 12
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Utensils size={16} color="var(--brand-terracotta)" />
-                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--brand-green)' }}>
-                      {t.todayQuickAction}
-                    </span>
-                    <input
-                      type="date"
-                      value={quickDate}
-                      onChange={(e) => setQuickDate(e.target.value)}
-                      style={{
-                        background: 'var(--bg-card-subtle)',
-                        border: '1px solid var(--border-color)',
-                        color: 'var(--text-main)',
-                        padding: '3px 8px',
+                  {/* Card Header: Title, Date Picker, Edit Menu Button */}
+                  <div style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    marginBottom: 16,
+                    paddingBottom: 12,
+                    borderBottom: '1px solid var(--border-color)'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{
+                        width: 36,
+                        height: 36,
                         borderRadius: 'var(--radius-sm)',
-                        fontSize: 12
-                      }}
-                    />
+                        background: 'var(--brand-green-soft)',
+                        color: 'var(--brand-green)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}>
+                        <Utensils size={18} />
+                      </div>
+                      <div>
+                        <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--brand-green)', margin: 0 }}>
+                          {t.mealMenu}
+                        </h3>
+                        <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '2px 0 0' }}>
+                          {t.todayQuickAction}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <input
+                        type="date"
+                        value={quickDate}
+                        onChange={(e) => setQuickDate(e.target.value)}
+                        style={{
+                          background: 'var(--bg-card-subtle)',
+                          border: '1px solid var(--border-color)',
+                          color: 'var(--text-main)',
+                          padding: '6px 12px',
+                          borderRadius: 'var(--radius-sm)',
+                          fontSize: 13,
+                          fontWeight: 500,
+                          cursor: 'pointer'
+                        }}
+                      />
+                      <button
+                        onClick={() => openMenuModal(quickDate)}
+                        title={t.editMenu}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          padding: '7px 14px',
+                          borderRadius: 'var(--radius-sm)',
+                          background: 'var(--brand-green)',
+                          color: '#FFFFFF',
+                          fontSize: 13,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          transition: 'var(--transition)'
+                        }}>
+                        <Edit3 size={14} />
+                        <span>{t.editMenu}</span>
+                      </button>
+                    </div>
                   </div>
 
-                  {/* 1-Tap Toggle Buttons */}
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      onClick={() => handleQuickMealToggle('breakfast')}
-                      style={{
-                        background: (userTodayRecord && parseFloat(userTodayRecord.breakfast) > 0)
-                          ? 'var(--brand-green)'
-                          : 'var(--bg-card-subtle)',
-                        color: (userTodayRecord && parseFloat(userTodayRecord.breakfast) > 0)
-                          ? '#FFF'
-                          : 'var(--text-muted)',
-                        padding: '6px 14px',
-                        borderRadius: 'var(--radius-full)',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        border: '1px solid var(--border-color)'
-                      }}>
-                      {t.breakfast}: {(userTodayRecord && parseFloat(userTodayRecord.breakfast) > 0) ? t.on : t.off}
-                    </button>
+                  {/* 3 Meal Slots Grid */}
+                  {(() => {
+                    const selRecords = mealRecords.filter(r => r.date.split('T')[0] === quickDate);
+                    const bActive = userTodayRecord && parseFloat(userTodayRecord.breakfast) > 0;
+                    const lActive = userTodayRecord && parseFloat(userTodayRecord.lunch) > 0;
+                    const dActive = userTodayRecord && parseFloat(userTodayRecord.dinner) > 0;
 
-                    <button
-                      onClick={() => handleQuickMealToggle('lunch')}
-                      style={{
-                        background: (userTodayRecord && parseFloat(userTodayRecord.lunch) > 0)
-                          ? 'var(--brand-green)'
-                          : 'var(--bg-card-subtle)',
-                        color: (userTodayRecord && parseFloat(userTodayRecord.lunch) > 0)
-                          ? '#FFF'
-                          : 'var(--text-muted)',
-                        padding: '6px 14px',
-                        borderRadius: 'var(--radius-full)',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        border: '1px solid var(--border-color)'
-                      }}>
-                      {t.lunch}: {(userTodayRecord && parseFloat(userTodayRecord.lunch) > 0) ? t.on : t.off}
-                    </button>
+                    const bCount = selRecords.filter(r => parseFloat(r.breakfast) > 0).length;
+                    const lCount = selRecords.filter(r => parseFloat(r.lunch) > 0).length;
+                    const dCount = selRecords.filter(r => parseFloat(r.dinner) > 0).length;
 
-                    <button
-                      onClick={() => handleQuickMealToggle('dinner')}
-                      style={{
-                        background: (userTodayRecord && parseFloat(userTodayRecord.dinner) > 0)
-                          ? 'var(--brand-green)'
-                          : 'var(--bg-card-subtle)',
-                        color: (userTodayRecord && parseFloat(userTodayRecord.dinner) > 0)
-                          ? '#FFF'
-                          : 'var(--text-muted)',
-                        padding: '6px 14px',
-                        borderRadius: 'var(--radius-full)',
-                        fontSize: 12,
-                        fontWeight: 600,
-                        border: '1px solid var(--border-color)'
+                    const bMenu = dailyMenus.find(m => m.date.split('T')[0] === quickDate && m.meal_type === 'breakfast');
+                    const lMenu = dailyMenus.find(m => m.date.split('T')[0] === quickDate && m.meal_type === 'lunch');
+                    const dMenu = dailyMenus.find(m => m.date.split('T')[0] === quickDate && m.meal_type === 'dinner');
+
+                    return (
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                        gap: 16
                       }}>
-                      {t.dinner}: {(userTodayRecord && parseFloat(userTodayRecord.dinner) > 0) ? t.on : t.off}
-                    </button>
-                  </div>
+                        {/* SLOT 1: BREAKFAST (সকালের নাস্তা) */}
+                        <div style={{
+                          background: 'var(--bg-card-subtle)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: 'var(--radius-md)',
+                          padding: 16,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          gap: 14
+                        }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <Coffee size={18} color="var(--brand-terracotta)" />
+                                <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-main)' }}>
+                                  {t.breakfastSlot}
+                                </span>
+                              </div>
+                              <span style={{
+                                fontSize: 11,
+                                padding: '3px 8px',
+                                borderRadius: 'var(--radius-full)',
+                                background: 'var(--bg-card)',
+                                border: '1px solid var(--border-color)',
+                                color: 'var(--text-muted)',
+                                fontWeight: 600
+                              }}>
+                                {bCount} {t.membersCount}
+                              </span>
+                            </div>
+
+                            {/* Dishes: Staple, Main Dish, Side Dish */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                                <span style={{ color: 'var(--text-muted)', minWidth: 70, fontWeight: 600 }}>{t.staple}:</span>
+                                <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>
+                                  {bMenu?.staple || <span style={{ color: 'var(--text-subtle)', fontStyle: 'italic' }}>—</span>}
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                                <span style={{ color: 'var(--text-muted)', minWidth: 70, fontWeight: 600 }}>{t.mainDish}:</span>
+                                <span style={{ color: 'var(--brand-terracotta)', fontWeight: 700 }}>
+                                  {bMenu?.main_dish || <span style={{ color: 'var(--text-subtle)', fontStyle: 'italic' }}>—</span>}
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                                <span style={{ color: 'var(--text-muted)', minWidth: 70, fontWeight: 600 }}>{t.sideDish}:</span>
+                                <span style={{ color: 'var(--text-main)', fontWeight: 500 }}>
+                                  {bMenu?.side_dish || <span style={{ color: 'var(--text-subtle)', fontStyle: 'italic' }}>—</span>}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Attendance Toggle */}
+                          <button
+                            onClick={() => handleQuickMealToggle('breakfast')}
+                            style={{
+                              width: '100%',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 6,
+                              padding: '8px 12px',
+                              borderRadius: 'var(--radius-sm)',
+                              fontSize: 13,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              background: bActive ? 'var(--brand-green)' : 'var(--bg-card)',
+                              color: bActive ? '#FFFFFF' : 'var(--text-muted)',
+                              border: bActive ? '1px solid var(--brand-green)' : '1px solid var(--border-color)',
+                              transition: 'var(--transition)'
+                            }}>
+                            <span>{t.breakfast}:</span>
+                            <span>{bActive ? t.on : t.off}</span>
+                          </button>
+                        </div>
+
+                        {/* SLOT 2: LUNCH (দুপুরের খাবার) */}
+                        <div style={{
+                          background: 'var(--bg-card-subtle)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: 'var(--radius-md)',
+                          padding: 16,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          gap: 14
+                        }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <Sun size={18} color="var(--brand-green)" />
+                                <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-main)' }}>
+                                  {t.lunchSlot}
+                                </span>
+                              </div>
+                              <span style={{
+                                fontSize: 11,
+                                padding: '3px 8px',
+                                borderRadius: 'var(--radius-full)',
+                                background: 'var(--bg-card)',
+                                border: '1px solid var(--border-color)',
+                                color: 'var(--text-muted)',
+                                fontWeight: 600
+                              }}>
+                                {lCount} {t.membersCount}
+                              </span>
+                            </div>
+
+                            {/* Dishes: Staple, Main Dish, Side Dish */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                                <span style={{ color: 'var(--text-muted)', minWidth: 70, fontWeight: 600 }}>{t.staple}:</span>
+                                <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>
+                                  {lMenu?.staple || <span style={{ color: 'var(--text-subtle)', fontStyle: 'italic' }}>—</span>}
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                                <span style={{ color: 'var(--text-muted)', minWidth: 70, fontWeight: 600 }}>{t.mainDish}:</span>
+                                <span style={{ color: 'var(--brand-terracotta)', fontWeight: 700 }}>
+                                  {lMenu?.main_dish || <span style={{ color: 'var(--text-subtle)', fontStyle: 'italic' }}>—</span>}
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                                <span style={{ color: 'var(--text-muted)', minWidth: 70, fontWeight: 600 }}>{t.sideDish}:</span>
+                                <span style={{ color: 'var(--text-main)', fontWeight: 500 }}>
+                                  {lMenu?.side_dish || <span style={{ color: 'var(--text-subtle)', fontStyle: 'italic' }}>—</span>}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Attendance Toggle */}
+                          <button
+                            onClick={() => handleQuickMealToggle('lunch')}
+                            style={{
+                              width: '100%',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 6,
+                              padding: '8px 12px',
+                              borderRadius: 'var(--radius-sm)',
+                              fontSize: 13,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              background: lActive ? 'var(--brand-green)' : 'var(--bg-card)',
+                              color: lActive ? '#FFFFFF' : 'var(--text-muted)',
+                              border: lActive ? '1px solid var(--brand-green)' : '1px solid var(--border-color)',
+                              transition: 'var(--transition)'
+                            }}>
+                            <span>{t.lunch}:</span>
+                            <span>{lActive ? t.on : t.off}</span>
+                          </button>
+                        </div>
+
+                        {/* SLOT 3: DINNER (রাতের খাবার) */}
+                        <div style={{
+                          background: 'var(--bg-card-subtle)',
+                          border: '1px solid var(--border-color)',
+                          borderRadius: 'var(--radius-md)',
+                          padding: 16,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          gap: 14
+                        }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <Moon size={18} color="var(--brand-terracotta)" />
+                                <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-main)' }}>
+                                  {t.dinnerSlot}
+                                </span>
+                              </div>
+                              <span style={{
+                                fontSize: 11,
+                                padding: '3px 8px',
+                                borderRadius: 'var(--radius-full)',
+                                background: 'var(--bg-card)',
+                                border: '1px solid var(--border-color)',
+                                color: 'var(--text-muted)',
+                                fontWeight: 600
+                              }}>
+                                {dCount} {t.membersCount}
+                              </span>
+                            </div>
+
+                            {/* Dishes: Staple, Main Dish, Side Dish */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                                <span style={{ color: 'var(--text-muted)', minWidth: 70, fontWeight: 600 }}>{t.staple}:</span>
+                                <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>
+                                  {dMenu?.staple || <span style={{ color: 'var(--text-subtle)', fontStyle: 'italic' }}>—</span>}
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                                <span style={{ color: 'var(--text-muted)', minWidth: 70, fontWeight: 600 }}>{t.mainDish}:</span>
+                                <span style={{ color: 'var(--brand-terracotta)', fontWeight: 700 }}>
+                                  {dMenu?.main_dish || <span style={{ color: 'var(--text-subtle)', fontStyle: 'italic' }}>—</span>}
+                                </span>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                                <span style={{ color: 'var(--text-muted)', minWidth: 70, fontWeight: 600 }}>{t.sideDish}:</span>
+                                <span style={{ color: 'var(--text-main)', fontWeight: 500 }}>
+                                  {dMenu?.side_dish || <span style={{ color: 'var(--text-subtle)', fontStyle: 'italic' }}>—</span>}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Attendance Toggle */}
+                          <button
+                            onClick={() => handleQuickMealToggle('dinner')}
+                            style={{
+                              width: '100%',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: 6,
+                              padding: '8px 12px',
+                              borderRadius: 'var(--radius-sm)',
+                              fontSize: 13,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              background: dActive ? 'var(--brand-green)' : 'var(--bg-card)',
+                              color: dActive ? '#FFFFFF' : 'var(--text-muted)',
+                              border: dActive ? '1px solid var(--brand-green)' : '1px solid var(--border-color)',
+                              transition: 'var(--transition)'
+                            }}>
+                            <span>{t.dinner}:</span>
+                            <span>{dActive ? t.on : t.off}</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Navigation Tabs */}
@@ -1456,93 +1830,144 @@ export function App() {
                     background: 'var(--bg-card)',
                     borderRadius: 'var(--radius-md)',
                     border: '1px solid var(--border-color)',
-                    padding: 16,
+                    padding: 18,
                     overflowX: 'auto'
                   }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--brand-green)' }}>
-                        {t.instUpdateMeal}
-                      </p>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+                      <div>
+                        <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--brand-green)', margin: 0 }}>
+                          {t.instUpdateMeal}
+                        </p>
+                        <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '2px 0 0' }}>
+                          🌅 {t.breakfast} ({lang === 'bn' ? 'সকাল' : 'B'}) • ☀️ {t.lunch} ({lang === 'bn' ? 'দুপুর' : 'L'}) • 🌙 {t.dinner} ({lang === 'bn' ? 'রাত' : 'D'})
+                        </p>
+                      </div>
                       <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        {currentMess.name} ({currentMess.duration_days} দিন)
+                        {currentMess.name} ({currentMess.duration_days} {t.days})
                       </span>
                     </div>
 
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, textAlign: 'center' }}>
                       <thead>
                         <tr style={{ background: 'var(--bg-card-subtle)', color: 'var(--text-main)' }}>
-                          <th style={{ padding: '8px 12px', textAlign: 'left', minWidth: 100 }}>তারিখ</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', minWidth: 90 }}>{t.date}</th>
+                          <th style={{ padding: '10px 12px', textAlign: 'left', minWidth: 180 }}>{t.mealMenu}</th>
                           {homeMembers.map(m => (
-                            <th key={m.user_id} style={{ padding: '8px 10px', minWidth: 110 }}>
+                            <th key={m.user_id} style={{ padding: '10px 8px', minWidth: 100 }}>
                               {m.name.split(' ')[0]}
                             </th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {cycleDates.map(d => (
-                          <tr key={d} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                            <td style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: 'var(--brand-green)' }}>
-                              {d.slice(5)}
-                            </td>
-                            {homeMembers.map(m => {
-                              const record = mealRecords.find(r => r.user_id === m.user_id && r.date.split('T')[0] === d);
-                              const b = record ? parseFloat(record.breakfast) : 0;
-                              const l = record ? parseFloat(record.lunch) : 1;
-                              const din = record ? parseFloat(record.dinner) : 1;
-                              const tot = (b + l + din).toFixed(1);
+                        {cycleDates.map(d => {
+                          const dateMenus = dailyMenus.filter(m => m.date.split('T')[0] === d);
+                          const bM = dateMenus.find(m => m.meal_type === 'breakfast');
+                          const lM = dateMenus.find(m => m.meal_type === 'lunch');
+                          const dM = dateMenus.find(m => m.meal_type === 'dinner');
 
-                              return (
-                                <td key={m.user_id} style={{ padding: '6px 8px' }}>
-                                  <div style={{ display: 'flex', gap: 3, justifyContent: 'center' }}>
-                                    {/* Breakfast */}
-                                    <button
-                                      onClick={() => handleUpdateMeal(m.user_id, d, 'b', b > 0 ? 0 : 1)}
-                                      title="সকাল"
-                                      style={{
-                                        padding: '3px 6px',
-                                        borderRadius: 4,
-                                        fontSize: 10,
-                                        background: b > 0 ? 'var(--brand-green)' : 'var(--bg-card-subtle)',
-                                        color: b > 0 ? '#FFF' : 'var(--text-muted)'
-                                      }}>
-                                      স
-                                    </button>
-                                    {/* Lunch */}
-                                    <button
-                                      onClick={() => handleUpdateMeal(m.user_id, d, 'l', l > 0 ? 0 : 1)}
-                                      title="দুপুর"
-                                      style={{
-                                        padding: '3px 6px',
-                                        borderRadius: 4,
-                                        fontSize: 10,
-                                        background: l > 0 ? 'var(--brand-green)' : 'var(--bg-card-subtle)',
-                                        color: l > 0 ? '#FFF' : 'var(--text-muted)'
-                                      }}>
-                                      দ
-                                    </button>
-                                    {/* Dinner */}
-                                    <button
-                                      onClick={() => handleUpdateMeal(m.user_id, d, 'd', din > 0 ? 0 : 1)}
-                                      title="রাত"
-                                      style={{
-                                        padding: '3px 6px',
-                                        borderRadius: 4,
-                                        fontSize: 10,
-                                        background: din > 0 ? 'var(--brand-green)' : 'var(--bg-card-subtle)',
-                                        color: din > 0 ? '#FFF' : 'var(--text-muted)'
-                                      }}>
-                                      র
-                                    </button>
+                          return (
+                            <tr key={d} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                              <td style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: 'var(--brand-green)', whiteSpace: 'nowrap' }}>
+                                {d.slice(5)}
+                              </td>
+                              <td style={{ padding: '8px 12px', textAlign: 'left' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                                  <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                                    {bM?.main_dish || lM?.main_dish || dM?.main_dish ? (
+                                      <span>
+                                        {bM?.main_dish ? `🌅 ${bM.main_dish} ` : ''}
+                                        {lM?.main_dish ? `☀️ ${lM.main_dish} ` : ''}
+                                        {dM?.main_dish ? `🌙 ${dM.main_dish}` : ''}
+                                      </span>
+                                    ) : (
+                                      <span style={{ color: 'var(--text-subtle)', fontStyle: 'italic' }}>{t.noMenuYet}</span>
+                                    )}
                                   </div>
-                                  <span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginTop: 2 }}>
-                                    {tot}
-                                  </span>
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
+                                  <button
+                                    onClick={() => openMenuModal(d)}
+                                    title={t.editMenu}
+                                    style={{
+                                      padding: '2px 6px',
+                                      borderRadius: 4,
+                                      border: '1px solid var(--border-color)',
+                                      background: 'var(--bg-card-subtle)',
+                                      color: 'var(--brand-green)',
+                                      cursor: 'pointer',
+                                      fontSize: 10
+                                    }}>
+                                    <Edit3 size={11} />
+                                  </button>
+                                </div>
+                              </td>
+                              {homeMembers.map(m => {
+                                const record = mealRecords.find(r => r.user_id === m.user_id && r.date.split('T')[0] === d);
+                                const b = record ? parseFloat(record.breakfast) : 0;
+                                const l = record ? parseFloat(record.lunch) : 1;
+                                const din = record ? parseFloat(record.dinner) : 1;
+                                const tot = (b + l + din).toFixed(1);
+
+                                return (
+                                  <td key={m.user_id} style={{ padding: '6px 8px' }}>
+                                    <div style={{ display: 'flex', gap: 3, justifyContent: 'center' }}>
+                                      {/* Breakfast Slot */}
+                                      <button
+                                        onClick={() => handleUpdateMeal(m.user_id, d, 'b', b > 0 ? 0 : 1)}
+                                        title={`${t.breakfastSlot}: ${b > 0 ? t.on : t.off}`}
+                                        style={{
+                                          padding: '3px 6px',
+                                          borderRadius: 4,
+                                          fontSize: 10,
+                                          fontWeight: 700,
+                                          cursor: 'pointer',
+                                          background: b > 0 ? 'var(--brand-green)' : 'var(--bg-card-subtle)',
+                                          color: b > 0 ? '#FFF' : 'var(--text-muted)',
+                                          border: b > 0 ? 'none' : '1px solid var(--border-color)'
+                                        }}>
+                                        {lang === 'bn' ? 'স' : 'B'}
+                                      </button>
+                                      {/* Lunch Slot */}
+                                      <button
+                                        onClick={() => handleUpdateMeal(m.user_id, d, 'l', l > 0 ? 0 : 1)}
+                                        title={`${t.lunchSlot}: ${l > 0 ? t.on : t.off}`}
+                                        style={{
+                                          padding: '3px 6px',
+                                          borderRadius: 4,
+                                          fontSize: 10,
+                                          fontWeight: 700,
+                                          cursor: 'pointer',
+                                          background: l > 0 ? 'var(--brand-green)' : 'var(--bg-card-subtle)',
+                                          color: l > 0 ? '#FFF' : 'var(--text-muted)',
+                                          border: l > 0 ? 'none' : '1px solid var(--border-color)'
+                                        }}>
+                                        {lang === 'bn' ? 'দ' : 'L'}
+                                      </button>
+                                      {/* Dinner Slot */}
+                                      <button
+                                        onClick={() => handleUpdateMeal(m.user_id, d, 'd', din > 0 ? 0 : 1)}
+                                        title={`${t.dinnerSlot}: ${din > 0 ? t.on : t.off}`}
+                                        style={{
+                                          padding: '3px 6px',
+                                          borderRadius: 4,
+                                          fontSize: 10,
+                                          fontWeight: 700,
+                                          cursor: 'pointer',
+                                          background: din > 0 ? 'var(--brand-green)' : 'var(--bg-card-subtle)',
+                                          color: din > 0 ? '#FFF' : 'var(--text-muted)',
+                                          border: din > 0 ? 'none' : '1px solid var(--border-color)'
+                                        }}>
+                                        {lang === 'bn' ? 'র' : 'D'}
+                                      </button>
+                                    </div>
+                                    <span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginTop: 2, fontWeight: 600 }}>
+                                      {tot}
+                                    </span>
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1647,7 +2072,7 @@ export function App() {
                     }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
                         <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-main)' }}>
-                          মোট বাজার: ৳{summaryData?.totalBazaar || 0}
+                          {t.totalBazaarLabel}: ৳{summaryData?.totalBazaar || 0}
                         </span>
                       </div>
                       {bazaarList.length === 0 ? (
@@ -1717,7 +2142,7 @@ export function App() {
                         </select>
                         <input
                           type="number"
-                          placeholder="Amount in BDT (৳)"
+                          placeholder={t.amountPlaceholder}
                           required
                           value={depositForm.amount}
                           onChange={(e) => setDepositForm({ ...depositForm, amount: e.target.value })}
@@ -1768,7 +2193,7 @@ export function App() {
                     }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
                         <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-main)' }}>
-                          মোট জমা: ৳{summaryData?.totalDeposits || 0}
+                          {t.totalDepositLabel}: ৳{summaryData?.totalDeposits || 0}
                         </span>
                       </div>
                       {depositList.length === 0 ? (
@@ -1906,11 +2331,11 @@ export function App() {
                                 <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{m.meals.total}</span>
                               </div>
                               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <span>খরচ (মিল × রেট):</span>
+                                <span>{t.costFormula}:</span>
                                 <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>৳{m.mealCost}</span>
                               </div>
                               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <span>জমা দেওয়া টাকা:</span>
+                                <span>{t.depositGiven}:</span>
                                 <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>৳{m.deposit}</span>
                               </div>
                               <div style={{
@@ -2006,7 +2431,7 @@ export function App() {
                             borderRadius: 'var(--radius-full)',
                             fontWeight: 600
                           }}>
-                            {m.role === 'manager' ? 'ম্যানেজার' : 'সদস্য'}
+                            {m.role === 'manager' ? t.managerRole : t.memberRole}
                           </span>
                         </div>
                       ))}
@@ -2089,7 +2514,7 @@ export function App() {
                     fontSize: 13,
                     color: 'var(--text-muted)'
                   }}>
-                  বাতিল
+                  {t.cancel}
                 </button>
                 <button
                   type="submit"
@@ -2102,7 +2527,7 @@ export function App() {
                     fontWeight: 600,
                     fontSize: 13
                   }}>
-                  তৈরি করুন
+                  {t.createAction}
                 </button>
               </div>
             </form>
@@ -2135,7 +2560,7 @@ export function App() {
               {t.instJoinHome}
             </h3>
             <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
-              ইনভাইট কোড লিখুন (যেমন: HOME-XXXXXX)
+              {t.inviteCodePrompt}
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -2168,7 +2593,7 @@ export function App() {
                     fontSize: 13,
                     color: 'var(--text-muted)'
                   }}>
-                  বাতিল
+                  {t.cancel}
                 </button>
                 <button
                   type="button"
@@ -2182,7 +2607,7 @@ export function App() {
                     fontWeight: 600,
                     fontSize: 13
                   }}>
-                  যুক্ত হোন
+                  {t.joinAction}
                 </button>
               </div>
             </div>
@@ -2261,7 +2686,7 @@ export function App() {
                 color: 'var(--text-muted)',
                 padding: '6px'
               }}>
-              বন্ধ করুন
+              {t.closeAction}
             </button>
           </div>
         </div>
@@ -2319,7 +2744,7 @@ export function App() {
 
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
-                  {t.cycleDuration}: {newMessForm.duration_days} দিন
+                  {t.cycleDuration}: {newMessForm.duration_days} {t.days}
                 </label>
                 {/* Duration Pills */}
                 <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
@@ -2337,7 +2762,7 @@ export function App() {
                         color: newMessForm.duration_days === days ? '#FFF' : 'var(--text-main)',
                         border: '1px solid var(--border-color)'
                       }}>
-                      {days} দিন {days === 10 ? '(ডিফল্ট)' : ''}
+                      {days} {t.days} {days === 10 ? t.defaultTag : ''}
                     </button>
                   ))}
                 </div>
@@ -2392,7 +2817,7 @@ export function App() {
                     fontSize: 13,
                     color: 'var(--text-muted)'
                   }}>
-                  বাতিল
+                  {t.cancel}
                 </button>
                 <button
                   type="submit"
@@ -2405,7 +2830,200 @@ export function App() {
                     fontWeight: 600,
                     fontSize: 13
                   }}>
-                  শুরু করুন
+                  {t.startAction}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* DAILY MENU PLANNER MODAL (STAPLE, MAIN DISH, SIDE DISH) */}
+      {showMenuModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 20,
+          zIndex: 100
+        }}>
+          <div style={{
+            maxWidth: 580,
+            width: '100%',
+            background: 'var(--bg-card)',
+            borderRadius: 'var(--radius-lg)',
+            padding: 26,
+            border: '1px solid var(--border-color)',
+            boxShadow: 'var(--shadow-lg)',
+            maxHeight: '90vh',
+            overflowY: 'auto'
+          }} className="animate-slide-up">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <div>
+                <h3 style={{ fontSize: 18, color: 'var(--brand-green)', margin: 0, fontWeight: 700 }}>
+                  {t.mealMenu}
+                </h3>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  {t.date}: {menuModalDate}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMenuModal(false)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16 }}>
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveMenu} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* BREAKFAST SECTION */}
+              <div style={{ background: 'var(--bg-card-subtle)', padding: 14, borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                <h4 style={{ fontSize: 14, fontWeight: 700, color: 'var(--brand-terracotta)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Coffee size={15} /> {t.breakfastSlot}
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>{t.staple}</label>
+                    <input
+                      type="text"
+                      placeholder={t.staplePlaceholder}
+                      value={menuForm.breakfast.staple}
+                      onChange={(e) => setMenuForm({ ...menuForm, breakfast: { ...menuForm.breakfast, staple: e.target.value } })}
+                      style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: 12 }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>{t.mainDish}</label>
+                    <input
+                      type="text"
+                      placeholder={t.mainDishPlaceholder}
+                      value={menuForm.breakfast.main_dish}
+                      onChange={(e) => setMenuForm({ ...menuForm, breakfast: { ...menuForm.breakfast, main_dish: e.target.value } })}
+                      style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: 12 }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>{t.sideDish}</label>
+                    <input
+                      type="text"
+                      placeholder={t.sideDishPlaceholder}
+                      value={menuForm.breakfast.side_dish}
+                      onChange={(e) => setMenuForm({ ...menuForm, breakfast: { ...menuForm.breakfast, side_dish: e.target.value } })}
+                      style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: 12 }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* LUNCH SECTION */}
+              <div style={{ background: 'var(--bg-card-subtle)', padding: 14, borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                <h4 style={{ fontSize: 14, fontWeight: 700, color: 'var(--brand-green)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Sun size={15} /> {t.lunchSlot}
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>{t.staple}</label>
+                    <input
+                      type="text"
+                      placeholder={t.staplePlaceholder}
+                      value={menuForm.lunch.staple}
+                      onChange={(e) => setMenuForm({ ...menuForm, lunch: { ...menuForm.lunch, staple: e.target.value } })}
+                      style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: 12 }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>{t.mainDish}</label>
+                    <input
+                      type="text"
+                      placeholder={t.mainDishPlaceholder}
+                      value={menuForm.lunch.main_dish}
+                      onChange={(e) => setMenuForm({ ...menuForm, lunch: { ...menuForm.lunch, main_dish: e.target.value } })}
+                      style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: 12 }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>{t.sideDish}</label>
+                    <input
+                      type="text"
+                      placeholder={t.sideDishPlaceholder}
+                      value={menuForm.lunch.side_dish}
+                      onChange={(e) => setMenuForm({ ...menuForm, lunch: { ...menuForm.lunch, side_dish: e.target.value } })}
+                      style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: 12 }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* DINNER SECTION */}
+              <div style={{ background: 'var(--bg-card-subtle)', padding: 14, borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
+                <h4 style={{ fontSize: 14, fontWeight: 700, color: 'var(--brand-terracotta)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Moon size={15} /> {t.dinnerSlot}
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>{t.staple}</label>
+                    <input
+                      type="text"
+                      placeholder={t.staplePlaceholder}
+                      value={menuForm.dinner.staple}
+                      onChange={(e) => setMenuForm({ ...menuForm, dinner: { ...menuForm.dinner, staple: e.target.value } })}
+                      style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: 12 }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>{t.mainDish}</label>
+                    <input
+                      type="text"
+                      placeholder={t.mainDishPlaceholder}
+                      value={menuForm.dinner.main_dish}
+                      onChange={(e) => setMenuForm({ ...menuForm, dinner: { ...menuForm.dinner, main_dish: e.target.value } })}
+                      style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: 12 }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>{t.sideDish}</label>
+                    <input
+                      type="text"
+                      placeholder={t.sideDishPlaceholder}
+                      value={menuForm.dinner.side_dish}
+                      onChange={(e) => setMenuForm({ ...menuForm, dinner: { ...menuForm.dinner, side_dish: e.target.value } })}
+                      style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: 12 }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowMenuModal(false)}
+                  style={{
+                    flex: 1,
+                    padding: 10,
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid var(--border-color)',
+                    fontSize: 13,
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer'
+                  }}>
+                  {t.cancel}
+                </button>
+                <button
+                  type="submit"
+                  style={{
+                    flex: 1,
+                    padding: 10,
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--brand-green)',
+                    color: '#FFF',
+                    fontWeight: 600,
+                    fontSize: 13,
+                    cursor: 'pointer'
+                  }}>
+                  {t.saveMenu}
                 </button>
               </div>
             </form>

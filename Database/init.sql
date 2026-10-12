@@ -81,10 +81,25 @@ CREATE TABLE IF NOT EXISTS deposits (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS daily_menus (
+    id SERIAL PRIMARY KEY,
+    mess_cycle_id INTEGER REFERENCES mess_cycles(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    meal_type VARCHAR(20) NOT NULL, -- 'breakfast', 'lunch', 'dinner'
+    staple TEXT DEFAULT '',         -- ভাত, রুটি, খিচুড়ি ইত্যাদি
+    main_dish TEXT DEFAULT '',      -- মুরগি, মাছ, ডিম ইত্যাদি
+    side_dish TEXT DEFAULT '',      -- ডাল, ভাজি, ভর্তা ইত্যাদি
+    notes TEXT DEFAULT '',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(mess_cycle_id, date, meal_type)
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_home_invite_code ON homes(invite_code);
 CREATE INDEX IF NOT EXISTS idx_home_members_user ON home_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_mess_cycles_home ON mess_cycles(home_id);
 CREATE INDEX IF NOT EXISTS idx_meal_records_cycle_date ON meal_records(mess_cycle_id, date);
+CREATE INDEX IF NOT EXISTS idx_daily_menus_cycle_date ON daily_menus(mess_cycle_id, date);
 CREATE INDEX IF NOT EXISTS idx_bazaar_cycle ON bazaar_expenses(mess_cycle_id);
 CREATE INDEX IF NOT EXISTS idx_deposits_cycle ON deposits(mess_cycle_id);

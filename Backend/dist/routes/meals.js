@@ -95,4 +95,50 @@ router.post('/:messId/quick-toggle', authenticateToken, async (req, res) => {
         res.status(500).json({ success: false, message: 'Failed to toggle meal' });
     }
 });
+// Get daily menu (Staple, Main dish, Side dish) for a mess cycle
+router.get('/:messId/menu', authenticateToken, async (req, res) => {
+    try {
+        const messId = parseParamId(req.params.messId);
+        const { date } = req.query;
+        let queryText = 'SELECT * FROM daily_menus WHERE mess_cycle_id = $1';
+        const params = [messId];
+        if (date) {
+            queryText += ' AND date = $2';
+            params.push(date);
+        }
+        queryText += ' ORDER BY date ASC, meal_type ASC';
+        const result = await query(queryText, params);
+        res.json({ success: true, menus: result.rows });
+    }
+    catch (error) {
+        console.error('Get daily menu error:', error);
+        res.status(500).json({ success: false, message: 'Failed to fetch daily menus' });
+    }
+});
+// Upsert daily menu (Staple, Main dish, Side dish) for a date & meal slot
+router.post('/:messId/menu', authenticateToken, async (req, res) => {
+    try {
+        const messId = parseParamId(req.params.messId);
+        const { date, meal_type, staple = '', main_dish = '', side_dish = '', notes = '' } = req.body;
+        if (!date || !meal_type) {
+            res.status(400).json({ success: false, message: 'Date and meal type required' });
+            return;
+        }
+        const result = await query(`INSERT INTO daily_menus (mess_cycle_id, date, meal_type, staple, main_dish, side_dish, notes, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+       ON CONFLICT (mess_cycle_id, date, meal_type)
+       DO UPDATE SET
+         staple = EXCLUDED.staple,
+         main_dish = EXCLUDED.main_dish,
+         side_dish = EXCLUDED.side_dish,
+         notes = EXCLUDED.notes,
+         updated_at = CURRENT_TIMESTAMP
+       RETURNING *`, [messId, date, meal_type, (staple || '').trim(), (main_dish || '').trim(), (side_dish || '').trim(), (notes || '').trim()]);
+        res.json({ success: true, menu: result.rows[0] });
+    }
+    catch (error) {
+        console.error('Save daily menu error:', error);
+        res.status(500).json({ success: false, message: 'Failed to save daily menu' });
+    }
+});
 export default router;
