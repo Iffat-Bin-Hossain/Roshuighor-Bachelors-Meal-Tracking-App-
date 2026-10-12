@@ -20,6 +20,10 @@ jobs:
     name: Deploy Frontend (Vercel)
     if: "${{ github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'frontend' }}"
     runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -42,10 +46,6 @@ jobs:
       - name: Deploy to Vercel (Preview or Production)
         if: "${{ env.VERCEL_TOKEN != '' }}"
         working-directory: Frontend
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
           npx vercel pull --yes --environment=production --token=$VERCEL_TOKEN
           npx vercel build --prod --token=$VERCEL_TOKEN
@@ -58,9 +58,16 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      BACKEND_DEPLOY_WEBHOOK: ${{ secrets.BACKEND_DEPLOY_WEBHOOK }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set lowercase repository owner
+        id: repo_owner
+        run: |
+          echo "owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')" >> "${GITHUB_OUTPUT}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -79,14 +86,12 @@ jobs:
           context: ./Backend
           push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: |
-            ghcr.io/${{ github.repository_owner }}/rosuighor-backend:latest
-            ghcr.io/${{ github.repository_owner }}/rosuighor-backend:${{ github.sha }}
+            ghcr.io/${{ steps.repo_owner.outputs.owner }}/rosuighor-backend:latest
+            ghcr.io/${{ steps.repo_owner.outputs.owner }}/rosuighor-backend:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Trigger Webhook Deploy (Render / Railway / VPS - Optional)
         if: "${{ env.BACKEND_DEPLOY_WEBHOOK != '' }}"
-        env:
-          BACKEND_DEPLOY_WEBHOOK: ${{ secrets.BACKEND_DEPLOY_WEBHOOK }}
         run: |
           curl -X POST "$BACKEND_DEPLOY_WEBHOOK"
