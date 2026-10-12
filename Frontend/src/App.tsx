@@ -3,7 +3,7 @@ import {
   Sun, Moon, Globe, LogOut, Home as HomeIcon, Users, Plus,
   Share2, Check, DollarSign, Utensils, ShoppingBag,
   TrendingUp, Copy, CheckCircle2, AlertCircle, ArrowRight,
-  Eye, EyeOff, Coffee, Edit3
+  Eye, EyeOff, Edit3
 } from 'lucide-react';
 import { translations, type Language } from './i18n';
 import { apiFetch, getAuthToken, setAuthToken } from './api';
@@ -55,7 +55,7 @@ interface DailyMenu {
   id?: number;
   mess_cycle_id: number;
   date: string;
-  meal_type: 'breakfast' | 'lunch' | 'dinner';
+  meal_type: 'lunch' | 'dinner';
   staple: string;
   main_dish: string;
   side_dish: string;
@@ -111,12 +111,11 @@ export function App() {
   const [cycleDates, setCycleDates] = useState<string[]>([]);
   const [quickDate, setQuickDate] = useState(new Date().toISOString().split('T')[0]);
 
-  // Daily Menus (Staple, Main Dish, Side Dish for Breakfast, Lunch, Dinner)
+  // Daily Menus (Staple, Main Dish, Side Dish for Lunch & Dinner)
   const [dailyMenus, setDailyMenus] = useState<DailyMenu[]>([]);
   const [showMenuModal, setShowMenuModal] = useState(false);
   const [menuModalDate, setMenuModalDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [menuForm, setMenuForm] = useState({
-    breakfast: { staple: '', main_dish: '', side_dish: '' },
     lunch: { staple: '', main_dish: '', side_dish: '' },
     dinner: { staple: '', main_dish: '', side_dish: '' }
   });
@@ -272,11 +271,9 @@ export function App() {
 
   const openMenuModal = (dateStr: string) => {
     setMenuModalDate(dateStr);
-    const b = dailyMenus.find(m => m.date.split('T')[0] === dateStr && m.meal_type === 'breakfast');
     const l = dailyMenus.find(m => m.date.split('T')[0] === dateStr && m.meal_type === 'lunch');
     const d = dailyMenus.find(m => m.date.split('T')[0] === dateStr && m.meal_type === 'dinner');
     setMenuForm({
-      breakfast: { staple: b?.staple || '', main_dish: b?.main_dish || '', side_dish: b?.side_dish || '' },
       lunch: { staple: l?.staple || '', main_dish: l?.main_dish || '', side_dish: l?.side_dish || '' },
       dinner: { staple: d?.staple || '', main_dish: d?.main_dish || '', side_dish: d?.side_dish || '' }
     });
@@ -288,14 +285,6 @@ export function App() {
     if (!currentMess || !menuModalDate) return;
     try {
       await Promise.all([
-        apiFetch(`/meals/${currentMess.id}/menu`, {
-          method: 'POST',
-          body: JSON.stringify({
-            date: menuModalDate,
-            meal_type: 'breakfast',
-            ...menuForm.breakfast
-          })
-        }),
         apiFetch(`/meals/${currentMess.id}/menu`, {
           method: 'POST',
           body: JSON.stringify({
@@ -518,7 +507,7 @@ export function App() {
   };
 
   // 1-Tap Quick Toggle Today's Meal
-  const handleQuickMealToggle = async (mealType: 'breakfast' | 'lunch' | 'dinner') => {
+  const handleQuickMealToggle = async (mealType: 'lunch' | 'dinner') => {
     if (!currentMess || !user) return;
     try {
       await apiFetch(`/meals/${currentMess.id}/quick-toggle`, {
@@ -536,10 +525,9 @@ export function App() {
   };
 
   // Update Individual Meal Record
-  const handleUpdateMeal = async (userId: number, date: string, type: 'b' | 'l' | 'd' | 'g', val: number) => {
+  const handleUpdateMeal = async (userId: number, date: string, type: 'l' | 'd' | 'g', val: number) => {
     if (!currentMess) return;
     const existing = mealRecords.find(r => r.user_id === userId && r.date.split('T')[0] === date);
-    const b = type === 'b' ? val : (existing ? parseFloat(existing.breakfast) : 0);
     const l = type === 'l' ? val : (existing ? parseFloat(existing.lunch) : 1);
     const d = type === 'd' ? val : (existing ? parseFloat(existing.dinner) : 1);
     const g = type === 'g' ? val : (existing ? parseFloat(existing.guest_meals) : 0);
@@ -550,7 +538,7 @@ export function App() {
         body: JSON.stringify({
           user_id: userId,
           date,
-          breakfast: b,
+          breakfast: 0,
           lunch: l,
           dinner: d,
           guest_meals: g
@@ -1520,107 +1508,25 @@ export function App() {
                     </div>
                   </div>
 
-                  {/* 3 Meal Slots Grid */}
+                  {/* 2 Meal Slots Grid: Lunch & Dinner */}
                   {(() => {
                     const selRecords = mealRecords.filter(r => r.date.split('T')[0] === quickDate);
-                    const bActive = userTodayRecord && parseFloat(userTodayRecord.breakfast) > 0;
                     const lActive = userTodayRecord && parseFloat(userTodayRecord.lunch) > 0;
                     const dActive = userTodayRecord && parseFloat(userTodayRecord.dinner) > 0;
 
-                    const bCount = selRecords.filter(r => parseFloat(r.breakfast) > 0).length;
                     const lCount = selRecords.filter(r => parseFloat(r.lunch) > 0).length;
                     const dCount = selRecords.filter(r => parseFloat(r.dinner) > 0).length;
 
-                    const bMenu = dailyMenus.find(m => m.date.split('T')[0] === quickDate && m.meal_type === 'breakfast');
                     const lMenu = dailyMenus.find(m => m.date.split('T')[0] === quickDate && m.meal_type === 'lunch');
                     const dMenu = dailyMenus.find(m => m.date.split('T')[0] === quickDate && m.meal_type === 'dinner');
 
                     return (
                       <div style={{
                         display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
                         gap: 16
                       }}>
-                        {/* SLOT 1: BREAKFAST (সকালের নাস্তা) */}
-                        <div style={{
-                          background: 'var(--bg-card-subtle)',
-                          border: '1px solid var(--border-color)',
-                          borderRadius: 'var(--radius-md)',
-                          padding: 16,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          justifyContent: 'space-between',
-                          gap: 14
-                        }}>
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <Coffee size={18} color="var(--brand-terracotta)" />
-                                <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-main)' }}>
-                                  {t.breakfastSlot}
-                                </span>
-                              </div>
-                              <span style={{
-                                fontSize: 11,
-                                padding: '3px 8px',
-                                borderRadius: 'var(--radius-full)',
-                                background: 'var(--bg-card)',
-                                border: '1px solid var(--border-color)',
-                                color: 'var(--text-muted)',
-                                fontWeight: 600
-                              }}>
-                                {bCount} {t.membersCount}
-                              </span>
-                            </div>
-
-                            {/* Dishes: Staple, Main Dish, Side Dish */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
-                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                                <span style={{ color: 'var(--text-muted)', minWidth: 70, fontWeight: 600 }}>{t.staple}:</span>
-                                <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>
-                                  {bMenu?.staple || <span style={{ color: 'var(--text-subtle)', fontStyle: 'italic' }}>—</span>}
-                                </span>
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                                <span style={{ color: 'var(--text-muted)', minWidth: 70, fontWeight: 600 }}>{t.mainDish}:</span>
-                                <span style={{ color: 'var(--brand-terracotta)', fontWeight: 700 }}>
-                                  {bMenu?.main_dish || <span style={{ color: 'var(--text-subtle)', fontStyle: 'italic' }}>—</span>}
-                                </span>
-                              </div>
-                              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                                <span style={{ color: 'var(--text-muted)', minWidth: 70, fontWeight: 600 }}>{t.sideDish}:</span>
-                                <span style={{ color: 'var(--text-main)', fontWeight: 500 }}>
-                                  {bMenu?.side_dish || <span style={{ color: 'var(--text-subtle)', fontStyle: 'italic' }}>—</span>}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Attendance Toggle */}
-                          <button
-                            onClick={() => handleQuickMealToggle('breakfast')}
-                            style={{
-                              width: '100%',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: 6,
-                              padding: '8px 12px',
-                              borderRadius: 'var(--radius-sm)',
-                              fontSize: 13,
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              background: bActive ? 'var(--brand-green)' : 'var(--bg-card)',
-                              color: bActive ? '#FFFFFF' : 'var(--text-muted)',
-                              border: bActive ? '1px solid var(--brand-green)' : '1px solid var(--border-color)',
-                              transition: 'var(--transition)'
-                            }}>
-                            <span>{t.breakfast}:</span>
-                            <span>{bActive ? t.on : t.off}</span>
-                          </button>
-                        </div>
-
-                        {/* SLOT 2: LUNCH (দুপুরের খাবার) */}
+                        {/* SLOT 1: LUNCH (দুপুরের খাবার) */}
                         <div style={{
                           background: 'var(--bg-card-subtle)',
                           border: '1px solid var(--border-color)',
@@ -1839,7 +1745,7 @@ export function App() {
                           {t.instUpdateMeal}
                         </p>
                         <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '2px 0 0' }}>
-                          🌅 {t.breakfast} ({lang === 'bn' ? 'সকাল' : 'B'}) • ☀️ {t.lunch} ({lang === 'bn' ? 'দুপুর' : 'L'}) • 🌙 {t.dinner} ({lang === 'bn' ? 'রাত' : 'D'})
+                          ☀️ {t.lunch} ({lang === 'bn' ? 'দুপুর' : 'L'}) • 🌙 {t.dinner} ({lang === 'bn' ? 'রাত' : 'D'})
                         </p>
                       </div>
                       <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
@@ -1862,7 +1768,6 @@ export function App() {
                       <tbody>
                         {cycleDates.map(d => {
                           const dateMenus = dailyMenus.filter(m => m.date.split('T')[0] === d);
-                          const bM = dateMenus.find(m => m.meal_type === 'breakfast');
                           const lM = dateMenus.find(m => m.meal_type === 'lunch');
                           const dM = dateMenus.find(m => m.meal_type === 'dinner');
 
@@ -1874,9 +1779,8 @@ export function App() {
                               <td style={{ padding: '8px 12px', textAlign: 'left' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
                                   <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.3 }}>
-                                    {bM?.main_dish || lM?.main_dish || dM?.main_dish ? (
+                                    {lM?.main_dish || dM?.main_dish ? (
                                       <span>
-                                        {bM?.main_dish ? `🌅 ${bM.main_dish} ` : ''}
                                         {lM?.main_dish ? `☀️ ${lM.main_dish} ` : ''}
                                         {dM?.main_dish ? `🌙 ${dM.main_dish}` : ''}
                                       </span>
@@ -1902,38 +1806,21 @@ export function App() {
                               </td>
                               {homeMembers.map(m => {
                                 const record = mealRecords.find(r => r.user_id === m.user_id && r.date.split('T')[0] === d);
-                                const b = record ? parseFloat(record.breakfast) : 0;
                                 const l = record ? parseFloat(record.lunch) : 1;
                                 const din = record ? parseFloat(record.dinner) : 1;
-                                const tot = (b + l + din).toFixed(1);
+                                const tot = (l + din).toFixed(1);
 
                                 return (
                                   <td key={m.user_id} style={{ padding: '6px 8px' }}>
-                                    <div style={{ display: 'flex', gap: 3, justifyContent: 'center' }}>
-                                      {/* Breakfast Slot */}
-                                      <button
-                                        onClick={() => handleUpdateMeal(m.user_id, d, 'b', b > 0 ? 0 : 1)}
-                                        title={`${t.breakfastSlot}: ${b > 0 ? t.on : t.off}`}
-                                        style={{
-                                          padding: '3px 6px',
-                                          borderRadius: 4,
-                                          fontSize: 10,
-                                          fontWeight: 700,
-                                          cursor: 'pointer',
-                                          background: b > 0 ? 'var(--brand-green)' : 'var(--bg-card-subtle)',
-                                          color: b > 0 ? '#FFF' : 'var(--text-muted)',
-                                          border: b > 0 ? 'none' : '1px solid var(--border-color)'
-                                        }}>
-                                        {lang === 'bn' ? 'স' : 'B'}
-                                      </button>
+                                    <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
                                       {/* Lunch Slot */}
                                       <button
                                         onClick={() => handleUpdateMeal(m.user_id, d, 'l', l > 0 ? 0 : 1)}
                                         title={`${t.lunchSlot}: ${l > 0 ? t.on : t.off}`}
                                         style={{
-                                          padding: '3px 6px',
+                                          padding: '4px 8px',
                                           borderRadius: 4,
-                                          fontSize: 10,
+                                          fontSize: 11,
                                           fontWeight: 700,
                                           cursor: 'pointer',
                                           background: l > 0 ? 'var(--brand-green)' : 'var(--bg-card-subtle)',
@@ -1947,9 +1834,9 @@ export function App() {
                                         onClick={() => handleUpdateMeal(m.user_id, d, 'd', din > 0 ? 0 : 1)}
                                         title={`${t.dinnerSlot}: ${din > 0 ? t.on : t.off}`}
                                         style={{
-                                          padding: '3px 6px',
+                                          padding: '4px 8px',
                                           borderRadius: 4,
-                                          fontSize: 10,
+                                          fontSize: 11,
                                           fontWeight: 700,
                                           cursor: 'pointer',
                                           background: din > 0 ? 'var(--brand-green)' : 'var(--bg-card-subtle)',
@@ -2879,45 +2766,6 @@ export function App() {
             </div>
 
             <form onSubmit={handleSaveMenu} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {/* BREAKFAST SECTION */}
-              <div style={{ background: 'var(--bg-card-subtle)', padding: 14, borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
-                <h4 style={{ fontSize: 14, fontWeight: 700, color: 'var(--brand-terracotta)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Coffee size={15} /> {t.breakfastSlot}
-                </h4>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
-                  <div>
-                    <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>{t.staple}</label>
-                    <input
-                      type="text"
-                      placeholder={t.staplePlaceholder}
-                      value={menuForm.breakfast.staple}
-                      onChange={(e) => setMenuForm({ ...menuForm, breakfast: { ...menuForm.breakfast, staple: e.target.value } })}
-                      style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: 12 }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>{t.mainDish}</label>
-                    <input
-                      type="text"
-                      placeholder={t.mainDishPlaceholder}
-                      value={menuForm.breakfast.main_dish}
-                      onChange={(e) => setMenuForm({ ...menuForm, breakfast: { ...menuForm.breakfast, main_dish: e.target.value } })}
-                      style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: 12 }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 11, color: 'var(--text-muted)', display: 'block', marginBottom: 3 }}>{t.sideDish}</label>
-                    <input
-                      type="text"
-                      placeholder={t.sideDishPlaceholder}
-                      value={menuForm.breakfast.side_dish}
-                      onChange={(e) => setMenuForm({ ...menuForm, breakfast: { ...menuForm.breakfast, side_dish: e.target.value } })}
-                      style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-main)', fontSize: 12 }}
-                    />
-                  </div>
-                </div>
-              </div>
-
               {/* LUNCH SECTION */}
               <div style={{ background: 'var(--bg-card-subtle)', padding: 14, borderRadius: 'var(--radius-md)', border: '1px solid var(--border-color)' }}>
                 <h4 style={{ fontSize: 14, fontWeight: 700, color: 'var(--brand-green)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
