@@ -16,7 +16,7 @@ import {
 import { translations, Language } from './src/i18n';
 import { colors } from './src/theme';
 
-const API_BASE = 'http://10.0.2.2:5000/api'; // Android emulator localhost / or machine IP
+const API_BASE = 'https://rosuighor-api.onrender.com/api'; // Android emulator localhost / or machine IP
 
 export default function App() {
   const [themeMode, setThemeMode] = useState<'light' | 'dark'>('light');
@@ -28,6 +28,7 @@ export default function App() {
   const [user, setUser] = useState<{ id: number; name: string; email: string } | null>(null);
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [authForm, setAuthForm] = useState({ name: '', email: '', password: '', confirmPassword: '' });
+  const [authSuccess, setAuthSuccess] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -63,7 +64,15 @@ export default function App() {
         Alert.alert('পাসওয়ার্ড', lang === 'bn' ? 'পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে' : 'Password must be at least 6 characters');
         return;
       }
+
+      // Successful registration: show message and redirect to sign in
+      setAuthSuccess(t.accountCreatedSuccess);
+      setAuthMode('signin');
+      setAuthForm(prev => ({ ...prev, password: '', confirmPassword: '' }));
+      Alert.alert(lang === 'bn' ? 'সফল হয়েছে!' : 'Success!', t.accountCreatedSuccess);
+      return;
     }
+
     setUser({ id: 1, name: authForm.name || 'ইফফাত', email: authForm.email || 'user@test.com' });
   };
 
@@ -144,6 +153,21 @@ export default function App() {
           </View>
 
           <View style={[styles.authCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            {authSuccess ? (
+              <View style={{
+                backgroundColor: theme.successBg,
+                padding: 10,
+                borderRadius: 8,
+                marginBottom: 12,
+                borderWidth: 1,
+                borderColor: 'rgba(16, 185, 129, 0.3)'
+              }}>
+                <Text style={{ color: theme.successText, fontSize: 13, fontWeight: '600', textAlign: 'center' }}>
+                  {authSuccess}
+                </Text>
+              </View>
+            ) : null}
+
             {authMode === 'signup' && (
               <TextInput
                 placeholder="e.g. Iffat Bin Hossain"
@@ -204,7 +228,11 @@ export default function App() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              onPress={() => setAuthMode(authMode === 'signin' ? 'signup' : 'signin')}
+              onPress={() => {
+                const nextMode = authMode === 'signin' ? 'signup' : 'signin';
+                setAuthMode(nextMode);
+                if (nextMode === 'signup') setAuthSuccess('');
+              }}
               style={{ marginTop: 14, alignItems: 'center' }}>
               <Text style={{ color: colors.brandTerracotta, fontSize: 13, fontWeight: '600' }}>
                 {authMode === 'signin' ? t.needAccount : t.haveAccount}
@@ -223,11 +251,15 @@ export default function App() {
 
       {/* Header */}
       <View style={[styles.header, { backgroundColor: theme.card, borderBottomColor: theme.border }]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Image source={require('./assets/logo.png')} style={{ width: 36, height: 36 }} resizeMode="contain" />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Image
+            source={themeMode === 'dark' ? require('./assets/logo-dark-transparent.png') : require('./assets/logo-transparent.png')}
+            style={{ width: 44, height: 34 }}
+            resizeMode="contain"
+          />
           <View>
-            <Text style={{ fontSize: 16, fontWeight: '700', color: colors.brandGreen }}>{homeName}</Text>
-            <Text style={{ fontSize: 11, color: theme.textMuted }}>{t.instShareLink}</Text>
+            <Text style={{ fontSize: 16, fontWeight: '800', color: colors.brandGreen }}>রসুইঘর</Text>
+            <Text style={{ fontSize: 11, color: theme.textMuted }}>{homeName}</Text>
           </View>
         </View>
 

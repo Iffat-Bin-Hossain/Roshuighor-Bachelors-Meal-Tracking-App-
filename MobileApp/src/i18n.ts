@@ -13,6 +13,7 @@ export const translations = {
     passwordMismatch: 'পাসওয়ার্ড দুটি মিলছে না!',
     signInAction: 'লগইন করুন',
     signUpAction: 'অ্যাকাউন্ট খুলুন',
+    accountCreatedSuccess: 'অ্যাকাউন্ট সফলভাবে তৈরি হয়েছে! অনুগ্রহ করে সাইন ইন করুন।',
     haveAccount: 'আগের একাউন্ট আছে?',
     needAccount: 'নতুন মেস মেম্বার?',
 
@@ -61,11 +62,12 @@ export const translations = {
     passwordMismatch: 'Passwords do not match!',
     signInAction: 'Sign In Now',
     signUpAction: 'Create Account',
+    accountCreatedSuccess: 'Account Created Successfully! Please sign in.',
     haveAccount: 'Already have account?',
     needAccount: 'New bachelor member?',
 
     // Instructions (3-4 words)
-    instCreateHome: 'Create your home',
+    instCreateHome: 'Create new home',
     instShareLink: 'Share invite link',
     instJoinHome: 'Join the home',
     instCreateMess: 'Start mess cycle',

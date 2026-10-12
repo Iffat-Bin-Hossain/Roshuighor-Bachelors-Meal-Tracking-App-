@@ -19,6 +19,7 @@ export const translations = {
     dontHaveAccount: 'নতুন মেস মেম্বার?',
     signInAction: 'লগইন করুন',
     signUpAction: 'অ্যাকাউন্ট খুলুন',
+    accountCreatedSuccess: 'অ্যাকাউন্ট সফলভাবে তৈরি হয়েছে! অনুগ্রহ করে সাইন ইন করুন।',
     authTagline: 'সহজ মেস মিল ব্যবস্থাপনা',
 
     // Instructions (3-4 words only!)
@@ -117,10 +118,11 @@ export const translations = {
     dontHaveAccount: 'New bachelor member?',
     signInAction: 'Sign In Now',
     signUpAction: 'Create Account',
+    accountCreatedSuccess: 'Account Created Successfully! Please sign in.',
     authTagline: 'Smart mess meal tracker',
 
     // Instructions (3-4 words only!)
-    instCreateHome: 'Create your home',
+    instCreateHome: 'Create new home',
     instShareLink: 'Share invite link',
     instJoinHome: 'Join the home',
     instCreateMess: 'Start mess cycle',

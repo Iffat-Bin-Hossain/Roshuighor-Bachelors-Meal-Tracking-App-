@@ -11,29 +11,29 @@
   --brand-terracotta-soft: rgba(200, 75, 35, 0.08);
   --brand-leaf: #2E7D32;
 
-  /* LIGHT MODE (Crisp, High Contrast, Clean Slate & Pure White) */
-  --bg-app: #F8FAF9;
+  /* LIGHT MODE (Logo-Compatible Warm Ivory & Forest Green Palette) */
+  --bg-app: #FAF7F2;          /* Exact warm ivory tone from the logo */
   --bg-card: #FFFFFF;
-  --bg-card-subtle: #F1F5F3;
-  --border-color: #E2E8F0;
-  --border-input: #CBD5E1;
+  --bg-card-subtle: #F5EFE6;   /* Warm cream surface matching logo background */
+  --border-color: #E8E1D5;     /* Warm earthen border */
+  --border-input: #D8CEBE;
   --border-focus: #0E3D2F;
 
-  --text-main: #0F172A;       /* High-contrast deep slate */
-  --text-muted: #475569;      /* Clear visible slate gray */
-  --text-subtle: #64748B;
+  --text-main: #14241F;        /* Deep rich forest charcoal */
+  --text-muted: #566861;       /* Warm herbal slate */
+  --text-subtle: #7A8C84;
   --text-on-brand: #FFFFFF;
 
   --input-bg: #FFFFFF;
-  --input-text: #0F172A;
-  --input-placeholder: #94A3B8;
+  --input-text: #14241F;
+  --input-placeholder: #8C9E97;
 
   --badge-success-bg: #ECFDF5;
   --badge-success-text: #047857;
   --badge-due-bg: #FEF2F2;
   --badge-due-text: #B91C1C;
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-sm: 0 1px 3px rgba(14, 61, 47, 0.05);
   --shadow-md: 0 4px 16px rgba(14, 61, 47, 0.08);
   --shadow-lg: 0 12px 32px rgba(14, 61, 47, 0.12);
 
@@ -45,12 +45,12 @@
 }
 
 [data-theme='dark'] {
-  /* DARK MODE (Obsidian Slate, Crystal-Clear Legibility) */
-  --bg-app: #0B1117;
-  --bg-card: #151E28;
-  --bg-card-subtle: #1B2632;
-  --border-color: #263545;
-  --border-input: #334458;
+  /* DARK MODE (Obsidian Slate, Crystal-Clear Legibility matching logo-dark) */
+  --bg-app: #0B1117;           /* Exact dark background of logo-dark.png */
+  --bg-card: #131B24;
+  --bg-card-subtle: #1A2430;
+  --border-color: #223040;
+  --border-input: #2D3E52;
   --border-focus: #34D399;
 
   --text-main: #F8FAFC;       /* Crisp bright white-slate */
@@ -58,13 +58,13 @@
   --text-subtle: #64748B;
   --text-on-brand: #FFFFFF;
 
-  --brand-green: #10B981;
-  --brand-green-hover: #059669;
-  --brand-green-soft: rgba(16, 185, 129, 0.15);
-  --brand-terracotta: #F97316;
-  --brand-terracotta-hover: #EA580C;
-  --brand-terracotta-soft: rgba(249, 115, 22, 0.15);
-  --brand-leaf: #34D399;
+  --brand-green: #34D399;
+  --brand-green-hover: #10B981;
+  --brand-green-soft: rgba(52, 211, 153, 0.15);
+  --brand-terracotta: #FB923C;
+  --brand-terracotta-hover: #F97316;
+  --brand-terracotta-soft: rgba(251, 146, 60, 0.15);
+  --brand-leaf: #4ADE80;
 
   --input-bg: #0F1722;
   --input-text: #F8FAFC;
@@ -289,7 +289,14 @@ input::placeholder, textarea::placeholder {
     min-width: unset;
   }
   .auth-logo-img {
-    width: 135px;
-    height: 135px;
+    width: 160px;
+    height: auto;
+    max-height: 120px;
+  }
+}
+
+@media (max-width: 640px) {
+  .navbar-subtitle-wrapper {
+    display: none;
   }
 }

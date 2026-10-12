@@ -2,12 +2,13 @@
   "expo": {
     "name": "রসুইঘর",
     "slug": "rosuighor",
+    "owner": "rosuighor",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/logo.png",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "splash": {
-      "image": "./assets/logo.png",
+      "image": "./assets/icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#FAF7F2"
     },
@@ -18,10 +19,18 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/logo.png",
-        "backgroundColor": "#0D382B"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#F9F1DF"
       },
       "package": "com.iffat.rosuighor"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "0bdab36c-1ea8-4a1c-b336-5af5b79e875b"
+      }
+    },
+    "plugins": [
+      "expo-asset"
+    ]
   }
 }

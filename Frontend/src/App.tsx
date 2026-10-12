@@ -63,6 +63,7 @@ export function App() {
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [authForm, setAuthForm] = useState({ name: '', email: '', phone: '', password: '', confirmPassword: '' });
   const [authError, setAuthError] = useState('');
+  const [authSuccess, setAuthSuccess] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
@@ -284,6 +285,9 @@ export function App() {
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
+    if (authMode === 'signin') {
+      setAuthSuccess('');
+    }
 
     const emailTrimmed = authForm.email.trim();
     const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
@@ -338,6 +342,19 @@ export function App() {
         body: JSON.stringify(payload)
       });
       if (res.success) {
+        if (authMode === 'signup') {
+          // Account created successfully: notify user and redirect to sign in page
+          setAuthSuccess(t.accountCreatedSuccess);
+          setAuthMode('signin');
+          setAuthError('');
+          setAuthForm(prev => ({
+            ...prev,
+            password: '',
+            confirmPassword: ''
+          }));
+          return;
+        }
+
         setAuthToken(res.token);
         setUser(res.user);
         loadHomes();
@@ -560,7 +577,7 @@ export function App() {
   if (isAuthChecking) {
     return (
       <div style={{ display: 'flex', minHeight: '100vh', alignItems: 'center', justifyContent: 'center' }}>
-        <img src={theme === 'dark' ? '/logo-dark.png' : '/logo.png'} alt="Logo" style={{ width: 80, height: 80, animation: 'pulseSubtle 1.5s infinite' }} />
+        <img src={theme === 'dark' ? '/logo-dark-transparent.png' : '/logo-transparent.png'} alt="Logo" style={{ height: 72, width: 'auto', animation: 'pulseSubtle 1.5s infinite' }} />
       </div>
     );
   }
@@ -579,7 +596,7 @@ export function App() {
           textAlign: 'center',
           boxShadow: 'var(--shadow-md)'
         }} className="animate-slide-up">
-          <img src={theme === 'dark' ? '/logo-dark.png' : '/logo.png'} alt="রসুইঘর" style={{ width: 88, height: 88, marginBottom: 12 }} />
+          <img src={theme === 'dark' ? '/logo-dark-transparent.png' : '/logo-transparent.png'} alt="রসুইঘর" style={{ height: 72, width: 'auto', marginBottom: 12 }} />
           <h2 style={{ fontSize: 20, color: 'var(--brand-green)', marginBottom: 4 }}>
             {invitePreviewHome ? invitePreviewHome.name : 'ঘর আমন্ত্রণ'}
           </h2>
@@ -713,7 +730,7 @@ export function App() {
               </button>
               <button
                 type="button"
-                onClick={() => { setAuthMode('signup'); setAuthError(''); }}
+                onClick={() => { setAuthMode('signup'); setAuthError(''); setAuthSuccess(''); }}
                 style={{
                   flex: 1,
                   padding: '9px 12px',
@@ -727,6 +744,24 @@ export function App() {
                 {t.signUp}
               </button>
             </div>
+
+            {authSuccess && (
+              <div style={{
+                background: 'var(--badge-success-bg)',
+                color: 'var(--badge-success-text)',
+                padding: '11px 14px',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: 13,
+                fontWeight: 600,
+                marginBottom: 16,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                border: '1px solid rgba(16, 185, 129, 0.3)'
+              }}>
+                <CheckCircle2 size={16} /> {authSuccess}
+              </div>
+            )}
 
             {authError && (
               <div style={{
@@ -889,8 +924,10 @@ export function App() {
               <button
                 type="button"
                 onClick={() => {
-                  setAuthMode(authMode === 'signin' ? 'signup' : 'signin');
+                  const nextMode = authMode === 'signin' ? 'signup' : 'signin';
+                  setAuthMode(nextMode);
                   setAuthError('');
+                  if (nextMode === 'signup') setAuthSuccess('');
                 }}
                 style={{ fontSize: 13, color: 'var(--brand-terracotta)', fontWeight: 600 }}>
                 {authMode === 'signin' ? t.dontHaveAccount : t.alreadyHaveAccount}
@@ -923,14 +960,36 @@ export function App() {
           justifyContent: 'space-between',
           gap: 12
         }}>
-          {/* Logo & Brand */}
+          {/* Brand Logo & Title */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <img src={theme === 'dark' ? '/logo-dark.png' : '/logo.png'} alt="Logo" style={{ width: 44, height: 44, objectFit: 'contain' }} />
+            <img
+              src={theme === 'dark' ? '/logo-dark-transparent.png' : '/logo-transparent.png'}
+              alt="রসুইঘর"
+              style={{
+                height: 42,
+                width: 'auto',
+                objectFit: 'contain',
+                display: 'block'
+              }}
+            />
             <div>
-              <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--brand-green)', lineHeight: 1.1 }}>
+              <h1 style={{
+                fontSize: 18,
+                fontWeight: 800,
+                color: 'var(--brand-green)',
+                lineHeight: 1.1,
+                letterSpacing: '-0.3px',
+                margin: 0
+              }}>
                 রসুইঘর
               </h1>
-              <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+              <p style={{
+                fontSize: 10,
+                fontWeight: 600,
+                color: 'var(--brand-terracotta)',
+                margin: 0,
+                lineHeight: 1.1
+              }}>
                 {t.appSubtitle}
               </p>
             </div>
