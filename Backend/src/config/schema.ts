@@ -25,4 +25,29 @@ export const ensureSchema = async (): Promise<void> => {
     )
   `);
   await query(`CREATE INDEX IF NOT EXISTS idx_email_otps_user_purpose ON email_otps(user_id, purpose, created_at DESC)`);
+
+  // Bazaar items are grouped into categories: staple | main | side | misc
+  await query(`ALTER TABLE bazaar_expenses ADD COLUMN IF NOT EXISTS category VARCHAR(20) NOT NULL DEFAULT 'misc'`);
+
+  // Menu = list of bazaar items chosen per meal: [{ "category": "staple", "name": "চাল" }, ...]
+  await query(`ALTER TABLE daily_menus ADD COLUMN IF NOT EXISTS items JSONB NOT NULL DEFAULT '[]'::jsonb`);
+
+  // Email invitations to join a home (joining requires the invited email + the 6-digit code from the email)
+  await query(`
+    CREATE TABLE IF NOT EXISTS home_invites (
+      id SERIAL PRIMARY KEY,
+      home_id INTEGER NOT NULL REFERENCES homes(id) ON DELETE CASCADE,
+      email VARCHAR(150) NOT NULL,
+      token VARCHAR(64) UNIQUE NOT NULL,
+      code_hash VARCHAR(128) NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      invited_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+      accepted_at TIMESTAMP WITH TIME ZONE,
+      revoked_at TIMESTAMP WITH TIME ZONE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_home_invites_home ON home_invites(home_id)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_home_invites_email ON home_invites(email)`);
 };

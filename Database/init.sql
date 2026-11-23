@@ -69,7 +69,8 @@ CREATE TABLE IF NOT EXISTS bazaar_expenses (
     buyer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     date DATE NOT NULL,
     amount NUMERIC(10,2) NOT NULL,
-    items_description TEXT NOT NULL,
+    items_description TEXT NOT NULL,           -- item name
+    category VARCHAR(20) NOT NULL DEFAULT 'misc', -- 'staple', 'main', 'side', 'misc'
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -92,6 +93,7 @@ CREATE TABLE IF NOT EXISTS daily_menus (
     main_dish TEXT DEFAULT '',      -- মুরগি, মাছ, ডিম ইত্যাদি
     side_dish TEXT DEFAULT '',      -- ডাল, ভাজি, ভর্তা ইত্যাদি
     notes TEXT DEFAULT '',
+    items JSONB NOT NULL DEFAULT '[]'::jsonb, -- [{ "category": "staple", "name": "চাল" }]
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(mess_cycle_id, date, meal_type)
@@ -109,7 +111,24 @@ CREATE TABLE IF NOT EXISTS email_otps (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Email invitations to join a home
+CREATE TABLE IF NOT EXISTS home_invites (
+    id SERIAL PRIMARY KEY,
+    home_id INTEGER NOT NULL REFERENCES homes(id) ON DELETE CASCADE,
+    email VARCHAR(150) NOT NULL,
+    token VARCHAR(64) UNIQUE NOT NULL,
+    code_hash VARCHAR(128) NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    invited_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    accepted_at TIMESTAMP WITH TIME ZONE,
+    revoked_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_home_invites_home ON home_invites(home_id);
+CREATE INDEX IF NOT EXISTS idx_home_invites_email ON home_invites(email);
 CREATE INDEX IF NOT EXISTS idx_email_otps_user_purpose ON email_otps(user_id, purpose, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_home_invite_code ON homes(invite_code);
 CREATE INDEX IF NOT EXISTS idx_home_members_user ON home_members(user_id);

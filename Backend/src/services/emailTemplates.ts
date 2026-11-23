@@ -318,3 +318,64 @@ export const passwordChangedEmail = (opts: { to: string; name: string; lang?: st
       `If you didn't do this, reset your password right away using "Forgot password?".\n\n— Rosuighor`
   };
 };
+
+/* ───────────────────────── Home invitation ───────────────────────── */
+
+export const homeInviteEmail = (opts: {
+  to: string;
+  inviterName: string;
+  homeName: string;
+  code: string;
+  link: string;
+  days: number;
+  lang?: string;
+}): MailMessage => {
+  const lang = normLang(opts.lang);
+  const inviter = escapeHtml(opts.inviterName);
+  const home = escapeHtml(opts.homeName);
+  const { code, link, days } = opts;
+
+  if (lang === 'bn') {
+    return {
+      to: opts.to,
+      subject: `${opts.inviterName} আপনাকে "${opts.homeName}" ঘরে আমন্ত্রণ জানিয়েছেন — রসুইঘর`,
+      html: layout({
+        lang,
+        preheader: `যোগ দিতে কোড ${code} ব্যবহার করুন।`,
+        heading: 'ঘরে যোগদানের আমন্ত্রণ',
+        bodyHtml:
+          p(`<strong>${inviter}</strong> আপনাকে রসুইঘরে <strong>"${home}"</strong> ঘরে যোগ দিতে আমন্ত্রণ জানিয়েছেন।`) +
+          p('নিচের বাটনে ক্লিক করুন, এই ইমেইল দিয়ে সাইন ইন (বা রেজিস্ট্রেশন) করুন এবং এই কোডটি লিখুন:') +
+          codeBlock(code, 'আমন্ত্রণ কোড') +
+          button(link, 'আমন্ত্রণ গ্রহণ করুন') +
+          p(`<span style="font-size:13px;color:${BRAND.muted};">আমন্ত্রণটি <strong>${toBnDigits(days)} দিন</strong> পর্যন্ত কার্যকর থাকবে এবং শুধুমাত্র <strong>${escapeHtml(opts.to)}</strong> ঠিকানার জন্য।</span>`) +
+          note('আপনি এই ব্যক্তিকে না চিনলে ইমেইলটি উপেক্ষা করুন।')
+      }),
+      text:
+        `${opts.inviterName} আপনাকে রসুইঘরে "${opts.homeName}" ঘরে আমন্ত্রণ জানিয়েছেন।\n\n` +
+        `আমন্ত্রণ কোড: ${code}\nলিংক: ${link}\n\n` +
+        `এই ইমেইল (${opts.to}) দিয়ে সাইন ইন করে কোডটি লিখুন। আমন্ত্রণটি ${toBnDigits(days)} দিন কার্যকর থাকবে।\n\n— রসুইঘর`
+    };
+  }
+
+  return {
+    to: opts.to,
+    subject: `${opts.inviterName} invited you to "${opts.homeName}" on Rosuighor`,
+    html: layout({
+      lang,
+      preheader: `Use code ${code} to join.`,
+      heading: "You're invited to a home",
+      bodyHtml:
+        p(`<strong>${inviter}</strong> invited you to join <strong>"${home}"</strong> on রসুইঘর (Rosuighor).`) +
+        p('Click the button, sign in (or sign up) with this email address, and enter this code:') +
+        codeBlock(code, 'Invitation code') +
+        button(link, 'Accept invitation') +
+        p(`<span style="font-size:13px;color:${BRAND.muted};">This invitation is valid for <strong>${days} days</strong> and only for <strong>${escapeHtml(opts.to)}</strong>.</span>`) +
+        note("If you don't know this person, you can ignore this email.")
+    }),
+    text:
+      `${opts.inviterName} invited you to join "${opts.homeName}" on Rosuighor.\n\n` +
+      `Invitation code: ${code}\nLink: ${link}\n\n` +
+      `Sign in with this email (${opts.to}) and enter the code. Valid for ${days} days.\n\n— Rosuighor`
+  };
+};

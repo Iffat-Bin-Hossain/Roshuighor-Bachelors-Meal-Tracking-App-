@@ -8,6 +8,7 @@ const router = Router();
 
 const MEAL_TYPES = ['lunch', 'dinner', 'guest_meals'] as const;
 const MENU_TYPES = ['lunch', 'dinner'] as const;
+const MENU_CATEGORIES = ['staple', 'main', 'side', 'misc'];
 
 /** Meal counts are 0–10 in steps of 0.5 (half meals are common in messes). */
 const clampMeal = (v: unknown): number => {
@@ -157,11 +158,12 @@ router.get('/:messId/menu', authenticateToken, requireMessMember(), async (req: 
   }
 });
 
-// Upsert daily menu for a date & meal slot
+// Upsert daily menu for a date & meal slot.
+// `items` = bazaar items picked for that meal: [{ category: 'staple'|'main'|'side'|'misc', name: string }]
 router.post('/:messId/menu', authenticateToken, requireMessMember(), async (req: MessRequest, res: Response): Promise<void> => {
   try {
     const mess = req.mess!;
-    const { date, meal_type, staple = '', main_dish = '', side_dish = '', notes = '' } = req.body;
+    const { date, meal_type, items } = req.body;
 
     if (!isIsoDate(date) || !MENU_TYPES.includes(meal_type)) {
       res.status(400).json({ success: false, code: 'BAD_REQUEST', message: 'Valid date and meal type required' });
@@ -171,21 +173,30 @@ router.post('/:messId/menu', authenticateToken, requireMessMember(), async (req:
       res.status(400).json({ success: false, code: 'DATE_OUTSIDE_MESS', message: 'Date is outside this mess cycle' });
       return;
     }
+    if (!Array.isArray(items) || items.length > 50) {
+      res.status(400).json({ success: false, code: 'BAD_REQUEST', message: 'items must be a list' });
+      return;
+    }
 
-    const clean = (v: unknown) => String(v ?? '').trim().slice(0, 200);
+    const seen = new Set<string>();
+    const cleanItems: { category: string; name: string }[] = [];
+    for (const it of items) {
+      const category = MENU_CATEGORIES.includes(it?.category) ? it.category : null;
+      const name = typeof it?.name === 'string' ? it.name.trim().slice(0, 100) : '';
+      if (!category || !name) continue;
+      const key = `${category}:${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      cleanItems.push({ category, name });
+    }
 
     const result = await query(
-      `INSERT INTO daily_menus (mess_cycle_id, date, meal_type, staple, main_dish, side_dish, notes, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+      `INSERT INTO daily_menus (mess_cycle_id, date, meal_type, items, updated_at)
+       VALUES ($1, $2, $3, $4::jsonb, CURRENT_TIMESTAMP)
        ON CONFLICT (mess_cycle_id, date, meal_type)
-       DO UPDATE SET
-         staple = EXCLUDED.staple,
-         main_dish = EXCLUDED.main_dish,
-         side_dish = EXCLUDED.side_dish,
-         notes = EXCLUDED.notes,
-         updated_at = CURRENT_TIMESTAMP
+       DO UPDATE SET items = EXCLUDED.items, updated_at = CURRENT_TIMESTAMP
        RETURNING *`,
-      [mess.id, date, meal_type, clean(staple), clean(main_dish), clean(side_dish), clean(notes)]
+      [mess.id, date, meal_type, JSON.stringify(cleanItems)]
     );
 
     res.json({ success: true, menu: result.rows[0] });

@@ -7,6 +7,8 @@ import { isIsoDate, parsePositiveAmount } from '../utils/validation.js';
 
 const router = Router();
 
+export const BAZAAR_CATEGORIES = ['staple', 'main', 'side', 'misc'] as const;
+
 // Get all bazaar entries for a mess cycle
 router.get('/:messId', authenticateToken, requireMessMember(), async (req: MessRequest, res: Response): Promise<void> => {
   try {
@@ -29,7 +31,8 @@ router.get('/:messId', authenticateToken, requireMessMember(), async (req: MessR
 router.post('/:messId', authenticateToken, requireMessMember(), async (req: MessRequest, res: Response): Promise<void> => {
   try {
     const mess = req.mess!;
-    const { buyer_id, date, amount, items_description } = req.body;
+    const { buyer_id, date, amount, items_description, category } = req.body;
+    const cat = BAZAAR_CATEGORIES.includes(category) ? category : 'misc';
     const amt = parsePositiveAmount(amount);
     const items = typeof items_description === 'string' ? items_description.trim() : '';
 
@@ -38,7 +41,7 @@ router.post('/:messId', authenticateToken, requireMessMember(), async (req: Mess
       return;
     }
     if (!items || !isIsoDate(date)) {
-      res.status(400).json({ success: false, code: 'BAD_REQUEST', message: 'Amount, date, and items required' });
+      res.status(400).json({ success: false, code: 'ITEM_REQUIRED', message: 'Item name and date required' });
       return;
     }
 
@@ -49,10 +52,10 @@ router.post('/:messId', authenticateToken, requireMessMember(), async (req: Mess
     }
 
     const result = await query(
-      `INSERT INTO bazaar_expenses (mess_cycle_id, buyer_id, date, amount, items_description)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO bazaar_expenses (mess_cycle_id, buyer_id, date, amount, items_description, category)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [mess.id, assignedBuyerId, date, amt, items.slice(0, 500)]
+      [mess.id, assignedBuyerId, date, amt, items.slice(0, 200), cat]
     );
 
     res.status(201).json({ success: true, message: 'Bazaar added successfully', expense: result.rows[0] });

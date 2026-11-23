@@ -190,6 +190,79 @@ const bn = {
   updateAvailable: 'নতুন সংস্করণ এসেছে',
   reload: 'রিলোড',
 
+
+  // Navigation / screens
+  back: 'ফিরে যান',
+  myHomes: 'আমার ঘরসমূহ',
+  myHomesSub: 'একটি ঘর বেছে নিন অথবা নতুন ঘর তৈরি করুন',
+  noHomesTitle: 'এখনো কোনো ঘর নেই',
+  noHomesSub: 'নতুন ঘর তৈরি করুন অথবা আমন্ত্রণ কোড দিয়ে যোগ দিন',
+  newHome: 'নতুন ঘর',
+  homeNameLabel: 'নাম',
+  homeAddressLabel: 'ঠিকানা',
+  createHomeTitle: 'নতুন ঘর তৈরি করুন',
+  messes: 'মেসসমূহ',
+  noMessTitle: 'এই ঘরে এখনো কোনো মেস নেই',
+  noMessSub: 'নতুন মেস শুরু করে হিসাব রাখা শুরু করুন',
+  newMess: 'নতুন মেস',
+  running: 'চলমান',
+  finished: 'শেষ',
+  upcoming: 'আসন্ন',
+  open: 'খুলুন',
+
+  // Email invitations
+  joinViaInvite: 'আমন্ত্রণে যোগ দিন',
+  joinInviteTitle: 'আমন্ত্রণ কোড দিয়ে যোগ দিন',
+  joinInviteSub: 'যে ইমেইলে আমন্ত্রণ এসেছে সেটি এবং ইমেইলে পাওয়া ৬ সংখ্যার কোড দিন।',
+  inviteCodeLabel: 'আমন্ত্রণ কোড',
+  inviteMembers: 'সদস্য আমন্ত্রণ',
+  inviteMembersSub: 'ইমেইলে আমন্ত্রণ লিংক ও কোড পাঠানো হবে',
+  sendInvite: 'আমন্ত্রণ পাঠান',
+  inviteSent: 'আমন্ত্রণ পাঠানো হয়েছে',
+  pendingInvites: 'অপেক্ষমাণ আমন্ত্রণ',
+  cancelInvite: 'আমন্ত্রণ বাতিল',
+  validUntil: 'মেয়াদ',
+  invitedYou: '{name} আপনাকে আমন্ত্রণ জানিয়েছেন',
+  inviteOnlyFor: 'এই আমন্ত্রণটি শুধুমাত্র {email} এর জন্য',
+  inviteSignInHint: 'আমন্ত্রিত ইমেইল দিয়ে সাইন ইন বা রেজিস্ট্রেশন করুন, তারপর কোডটি লিখুন।',
+  inviteExpired: 'এই আমন্ত্রণের মেয়াদ শেষ হয়ে গেছে',
+  inviteUsed: 'এই আমন্ত্রণটি আগেই ব্যবহার করা হয়েছে',
+  inviteRevoked: 'এই আমন্ত্রণটি বাতিল করা হয়েছে',
+  acceptInvite: 'যোগ দিন',
+  joinedHome: 'ঘরে যোগ দেওয়া হয়েছে!',
+  goHome: 'আমার ঘরসমূহে যান',
+
+  // Bazaar categories
+  catStaple: 'প্রধান খাদ্য',
+  catMain: 'মূল পদ',
+  catSide: 'পার্শ্ব পদ',
+  catMisc: 'বিবিধ',
+  catStapleHint: 'চাল, আটা, ডাল',
+  catMainHint: 'মাছ, মাংস, ডিম',
+  catSideHint: 'সবজি, শাক, আলু',
+  catMiscHint: 'তেল, মসলা, গ্যাস',
+  itemName: 'আইটেমের নাম',
+  price: 'দাম (৳)',
+  addItem: 'যোগ করুন',
+  noItemsYet: 'এখনো কোনো আইটেম নেই',
+  entryDefaults: 'নতুন আইটেমের তারিখ ও বাজারকারী',
+  deleteItemConfirm: 'এই আইটেমটি মুছে ফেলবেন?',
+  deleteAction: 'মুছুন',
+  bazaarTotal: 'মোট বাজার খরচ',
+
+  // Menu (picked from bazaar items)
+  menu: 'মেনু',
+  editMenuTitle: 'মেনু সাজান',
+  selectItems: 'আইটেম বেছে নিন',
+  searchItems: 'আইটেম খুঁজুন...',
+  noBazaarItemsForMenu: 'মেনু সাজাতে আগে বাজার অংশে আইটেম যোগ করুন',
+  goToBazaar: 'বাজারে যান',
+  selectedN: '{n}টি বাছাই করা',
+  clearAll: 'সব মুছুন',
+  noMatches: 'কিছু পাওয়া যায়নি',
+  mealSheetHint: 'ট্যাপ করে প্রত্যেকের দুপুর/রাতের মিল চালু বা বন্ধ করুন',
+  you: 'আপনি',
+
   // Server error codes → messages
   errors: {
     INVALID_EMAIL: 'সঠিক ইমেইল ঠিকানা দিন (যেমন: name@gmail.com)',
@@ -222,6 +295,12 @@ const bn = {
     INVALID_DATE: 'সঠিক তারিখ দিন',
     NOT_FOUND: 'তথ্যটি পাওয়া যায়নি',
     BAD_REQUEST: 'তথ্য সঠিক নয়। আবার পরীক্ষা করুন।',
+    HOME_NAME_REQUIRED: 'ঘরের নাম লিখুন',
+    HOME_NOT_FOUND: 'ঘরটি পাওয়া যায়নি',
+    ITEM_REQUIRED: 'আইটেমের নাম ও তারিখ দিন',
+    ALREADY_MEMBER: 'এই ব্যক্তি আগেই এই ঘরের সদস্য',
+    INVITE_EMAIL_MISMATCH: 'আমন্ত্রণটি অন্য ইমেইলের জন্য। আমন্ত্রিত ইমেইল দিয়ে সাইন ইন করুন।',
+    INVITE_EXPIRED: 'আমন্ত্রণের মেয়াদ শেষ। নতুন আমন্ত্রণ চেয়ে নিন।',
     DEFAULT: 'কিছু একটা সমস্যা হয়েছে। আবার চেষ্টা করুন।'
   } as Record<string, string>
 };
@@ -417,6 +496,78 @@ const en: Dict = {
   updateAvailable: 'A new version is available',
   reload: 'Reload',
 
+  // Navigation / screens
+  back: 'Back',
+  myHomes: 'My Homes',
+  myHomesSub: 'Pick a home or create a new one',
+  noHomesTitle: 'No homes yet',
+  noHomesSub: 'Create a home, or join one with an invitation code',
+  newHome: 'New Home',
+  homeNameLabel: 'Name',
+  homeAddressLabel: 'Address',
+  createHomeTitle: 'Create a New Home',
+  messes: 'Messes',
+  noMessTitle: 'No mess in this home yet',
+  noMessSub: 'Start a mess to begin tracking',
+  newMess: 'New Mess',
+  running: 'Running',
+  finished: 'Finished',
+  upcoming: 'Upcoming',
+  open: 'Open',
+
+  // Email invitations
+  joinViaInvite: 'Join with Invitation',
+  joinInviteTitle: 'Join with an Invitation Code',
+  joinInviteSub: 'Enter the email the invitation was sent to and the 6-digit code from that email.',
+  inviteCodeLabel: 'Invitation code',
+  inviteMembers: 'Invite Members',
+  inviteMembersSub: 'An invitation link and code will be emailed',
+  sendInvite: 'Send Invite',
+  inviteSent: 'Invitation sent',
+  pendingInvites: 'Pending invitations',
+  cancelInvite: 'Cancel invitation',
+  validUntil: 'Valid until',
+  invitedYou: '{name} invited you',
+  inviteOnlyFor: 'This invitation is only for {email}',
+  inviteSignInHint: 'Sign in or sign up with the invited email, then enter the code.',
+  inviteExpired: 'This invitation has expired',
+  inviteUsed: 'This invitation has already been used',
+  inviteRevoked: 'This invitation was cancelled',
+  acceptInvite: 'Join Home',
+  joinedHome: 'You joined the home!',
+  goHome: 'Go to my homes',
+
+  // Bazaar categories
+  catStaple: 'Staple Food',
+  catMain: 'Main Course',
+  catSide: 'Side Dish',
+  catMisc: 'Miscellaneous',
+  catStapleHint: 'Rice, flour, lentils',
+  catMainHint: 'Fish, meat, eggs',
+  catSideHint: 'Vegetables, greens, potato',
+  catMiscHint: 'Oil, spices, gas',
+  itemName: 'Item name',
+  price: 'Price (৳)',
+  addItem: 'Add',
+  noItemsYet: 'No items yet',
+  entryDefaults: 'Date & shopper for new items',
+  deleteItemConfirm: 'Delete this item?',
+  deleteAction: 'Delete',
+  bazaarTotal: 'Total Bazaar Cost',
+
+  // Menu (picked from bazaar items)
+  menu: 'Menu',
+  editMenuTitle: 'Plan Menu',
+  selectItems: 'Select items',
+  searchItems: 'Search items...',
+  noBazaarItemsForMenu: 'Add items in the Bazaar section first to plan the menu',
+  goToBazaar: 'Go to Bazaar',
+  selectedN: '{n} selected',
+  clearAll: 'Clear all',
+  noMatches: 'No matches',
+  mealSheetHint: "Tap to turn each member's lunch/dinner on or off",
+  you: 'You',
+
   errors: {
     INVALID_EMAIL: 'Please enter a valid email address (e.g. name@gmail.com)',
     EMAIL_UNDELIVERABLE: "This email address can't receive mail. Please check the spelling.",
@@ -448,6 +599,12 @@ const en: Dict = {
     INVALID_DATE: 'Please enter a valid date',
     NOT_FOUND: 'Not found',
     BAD_REQUEST: 'Some information is invalid. Please check and try again.',
+    HOME_NAME_REQUIRED: 'Please enter the home name',
+    HOME_NOT_FOUND: 'Home not found',
+    ITEM_REQUIRED: 'Please enter the item name and date',
+    ALREADY_MEMBER: 'This person is already a member of this home',
+    INVITE_EMAIL_MISMATCH: 'This invitation is for a different email. Sign in with the invited email.',
+    INVITE_EXPIRED: 'This invitation has expired. Ask for a new one.',
     DEFAULT: 'Something went wrong. Please try again.'
   }
 };
@@ -484,6 +641,9 @@ export const formatDate = (iso: string, lang: Language, withYear = false): strin
     timeZone: 'UTC'
   });
 };
+
+export const fill = (template: string, vars: Record<string, string | number>): string =>
+  template.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ''));
 
 export const membersLabel = (count: number, t: Dict, lang: Language): string =>
   `${formatNum(count, lang, 0)} ${count === 1 ? t.memberSingular : t.membersCount}`;
