@@ -1,9 +1,12 @@
 import pg from 'pg';
-import dotenv from 'dotenv';
+import './env.js';
 
-dotenv.config();
+const { Pool, types } = pg;
 
-const { Pool } = pg;
+// Return PostgreSQL DATE columns as plain 'YYYY-MM-DD' strings.
+// By default node-pg converts DATE to a JS Date at *local* midnight, which shifts
+// every date one day back when serialized to JSON on a UTC+6 (Bangladesh) machine.
+types.setTypeParser(1082, (value: string) => value);
 
 const connectionString = process.env.DATABASE_URL;
 
@@ -22,7 +25,7 @@ export const pool = new Pool(
         port: parseInt(process.env.DB_PORT || '5435', 10),
         database: process.env.DB_NAME || 'রসুইঘর',
         user: process.env.DB_USER || 'postgres',
-        password: process.env.DB_PASSWORD || 'Iffat25082002',
+        password: process.env.DB_PASSWORD,
         client_encoding: 'UTF8',
         max: 20,
         idleTimeoutMillis: 30000,

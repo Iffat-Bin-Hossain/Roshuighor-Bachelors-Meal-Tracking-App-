@@ -1,6 +1,6 @@
+import { env } from './config/env.js';
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -12,14 +12,17 @@ import bazaarRoutes from './routes/bazaar.js';
 import depositRoutes from './routes/deposits.js';
 import summaryRoutes from './routes/summary.js';
 import { pool } from './config/db.js';
-
-dotenv.config();
+import { ensureSchema } from './config/schema.js';
+import { verifyMailTransport } from './services/mailer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = env.port;
+
+// Behind Render/Railway/Nginx: trust the first proxy so req.ip (used by rate limiting) is the real client IP
+app.set('trust proxy', 1);
 
 // CORS setup to allow web app, mobile app, and localhost ports
 app.use(
@@ -31,7 +34,7 @@ app.use(
   })
 );
 
-app.use(express.json());
+app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Serve Logo folder static assets so apps can easily load original logo
@@ -68,8 +71,19 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   res.status(500).json({ success: false, message: 'Internal server error' });
 });
 
-// Start Server
-app.listen(PORT, () => {
-  console.log(`🍳 রসুইঘর Backend API running on http://localhost:${PORT}`);
-  console.log(`📡 Health Check: http://localhost:${PORT}/api/health`);
-});
+// Start Server (after making sure the DB schema is up to date)
+const start = async () => {
+  try {
+    await ensureSchema();
+  } catch (err) {
+    console.error('❌ Database schema check failed:', err);
+    process.exit(1);
+  }
+  await verifyMailTransport();
+  app.listen(PORT, () => {
+    console.log(`🍳 রসুইঘর Backend API running on http://localhost:${PORT}`);
+    console.log(`📡 Health Check: http://localhost:${PORT}/api/health`);
+  });
+};
+
+start();

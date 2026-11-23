@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Sun, Moon, Globe, LogOut, Home as HomeIcon, Users, Plus,
   Share2, Check, DollarSign, Utensils, ShoppingBag,
   TrendingUp, Copy, CheckCircle2, AlertCircle, ArrowRight,
-  Eye, EyeOff, Edit3
+  Eye, EyeOff, Edit3, Mail, KeyRound, ShieldCheck, Download, WifiOff, Loader2, ArrowLeft
 } from 'lucide-react';
-import { translations, type Language } from './i18n';
-import { apiFetch, getAuthToken, setAuthToken } from './api';
+import {
+  translations, type Language, errorMessage, formatNum, formatMoney, formatDate, membersLabel, todayLocal
+} from './i18n';
+import { apiFetch, getAuthToken, setAuthToken, SESSION_EXPIRED_EVENT, type ApiError } from './api';
 
 interface User {
   id: number;
@@ -62,25 +64,70 @@ interface DailyMenu {
   notes?: string;
 }
 
+type AuthMode = 'signin' | 'signup' | 'verify' | 'forgot' | 'reset';
+
+const EMAIL_REGEX = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+const NAME_REGEX = /^[\p{L}\p{M}\s.'-]+$/u;
+const isStrongPassword = (pw: string) => pw.length >= 8 && /\p{L}/u.test(pw) && /\d/.test(pw);
+const RESEND_SECONDS = 60;
+
+const defaultMessName = (start: string, days: number, lang: Language): string => {
+  const end = new Date(`${start}T00:00:00Z`);
+  end.setUTCDate(end.getUTCDate() + Math.max(1, days) - 1);
+  return `${formatDate(start, lang)} – ${formatDate(end.toISOString().slice(0, 10), lang)}`;
+};
+
+// Minimal typing for the PWA install prompt event (not in TS DOM lib)
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+}
+
 export function App() {
-  // Theme & Language
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
-  const [lang, setLang] = useState<Language>('bn');
+  // Theme & Language (remembered on this device even before sign-in)
+  const [theme, setTheme] = useState<'light' | 'dark'>(
+    () => (localStorage.getItem('rosuighor_theme') as 'light' | 'dark') || 'light'
+  );
+  const [lang, setLang] = useState<Language>(
+    () => (localStorage.getItem('rosuighor_lang') as Language) || 'bn'
+  );
   const t = translations[lang];
+  const langRef = useRef(lang);
+  langRef.current = lang;
 
   // Auth State
   const [user, setUser] = useState<User | null>(null);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
-  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [authMode, setAuthMode] = useState<AuthMode>('signin');
   const [authForm, setAuthForm] = useState({ name: '', email: '', phone: '', password: '', confirmPassword: '' });
   const [authError, setAuthError] = useState('');
   const [authSuccess, setAuthSuccess] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [resetForm, setResetForm] = useState({ code: '', password: '', confirmPassword: '' });
+  const [resendIn, setResendIn] = useState(0);
+
+  // Toast (replaces blocking alert() popups)
+  const [toast, setToast] = useState<{ msg: string; type: 'error' | 'success' } | null>(null);
+  const toastTimer = useRef<number | undefined>(undefined);
+  const showToast = (msg: string, type: 'error' | 'success' = 'error') => {
+    setToast({ msg, type });
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 4000);
+  };
+  const showError = (err: unknown) => showToast(errorMessage(translations[langRef.current], err), 'error');
+
+  // PWA: install prompt + online status
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   // Homes State
   const [homes, setHomes] = useState<Home[]>([]);
   const [currentHome, setCurrentHome] = useState<Home | null>(null);
+  const currentHomeIdRef = useRef<number | null>(null);
   const [homeMembers, setHomeMembers] = useState<any[]>([]);
   const [showCreateHomeModal, setShowCreateHomeModal] = useState(false);
   const [newHomeForm, setNewHomeForm] = useState({ name: '', address: '' });
@@ -90,6 +137,7 @@ export function App() {
   // Invite Link Preview / Joining
   const [incomingInviteCode, setIncomingInviteCode] = useState<string | null>(null);
   const [invitePreviewHome, setInvitePreviewHome] = useState<any | null>(null);
+  const [inviteScreenDismissed, setInviteScreenDismissed] = useState(false);
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [showJoinModal, setShowJoinModal] = useState(false);
 
@@ -100,7 +148,7 @@ export function App() {
   const [newMessForm, setNewMessForm] = useState({
     name: '',
     duration_days: 10,
-    start_date: new Date().toISOString().split('T')[0]
+    start_date: todayLocal()
   });
 
   // Active Tab
@@ -109,12 +157,12 @@ export function App() {
   // Meal Sheet
   const [mealRecords, setMealRecords] = useState<any[]>([]);
   const [cycleDates, setCycleDates] = useState<string[]>([]);
-  const [quickDate, setQuickDate] = useState(new Date().toISOString().split('T')[0]);
+  const [quickDate, setQuickDate] = useState(todayLocal());
 
   // Daily Menus (Staple, Main Dish, Side Dish for Lunch & Dinner)
   const [dailyMenus, setDailyMenus] = useState<DailyMenu[]>([]);
   const [showMenuModal, setShowMenuModal] = useState(false);
-  const [menuModalDate, setMenuModalDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [menuModalDate, setMenuModalDate] = useState<string>(todayLocal());
   const [menuForm, setMenuForm] = useState({
     lunch: { staple: '', main_dish: '', side_dish: '' },
     dinner: { staple: '', main_dish: '', side_dish: '' }
@@ -125,7 +173,7 @@ export function App() {
   const [bazaarForm, setBazaarForm] = useState({
     amount: '',
     items_description: '',
-    date: new Date().toISOString().split('T')[0],
+    date: todayLocal(),
     buyer_id: ''
   });
 
@@ -133,7 +181,7 @@ export function App() {
   const [depositList, setDepositList] = useState<any[]>([]);
   const [depositForm, setDepositForm] = useState({
     amount: '',
-    date: new Date().toISOString().split('T')[0],
+    date: todayLocal(),
     user_id: '',
     notes: ''
   });
@@ -147,12 +195,65 @@ export function App() {
     memberCalculations: MemberCalculation[];
   } | null>(null);
 
-  // Apply theme to document
+  // Apply theme / language to document and remember them on this device
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('rosuighor_theme', theme);
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#0B1117' : '#0E3D2F');
   }, [theme]);
 
-  // Check URL query param for telegram-style invite (?join=HOME-XXXX)
+  useEffect(() => {
+    document.documentElement.setAttribute('lang', lang);
+    localStorage.setItem('rosuighor_lang', lang);
+  }, [lang]);
+
+  // Resend-code countdown
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const id = window.setTimeout(() => setResendIn((s) => s - 1), 1000);
+    return () => window.clearTimeout(id);
+  }, [resendIn]);
+
+  // PWA install prompt & connectivity
+  useEffect(() => {
+    const onPrompt = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as BeforeInstallPromptEvent);
+    };
+    const onInstalled = () => setInstallPrompt(null);
+    const onOnline = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener('beforeinstallprompt', onPrompt);
+    window.addEventListener('appinstalled', onInstalled);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onPrompt);
+      window.removeEventListener('appinstalled', onInstalled);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
+
+  const handleInstall = async () => {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    await installPrompt.userChoice;
+    setInstallPrompt(null);
+  };
+
+  // Session revoked on the server (expired, or password changed on another device)
+  useEffect(() => {
+    const onExpired = () => {
+      handleLogout();
+      setAuthError(translations[langRef.current].sessionExpired);
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Check URL query param for invite link (?join=HOME-XXXX)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const joinCode = params.get('join') || params.get('code');
@@ -164,13 +265,18 @@ export function App() {
 
   const fetchInvitePreview = async (code: string) => {
     try {
-      const res = await apiFetch(`/homes/invite/${code}`);
-      if (res.success) {
-        setInvitePreviewHome(res.home);
-      }
+      const res = await apiFetch(`/homes/invite/${encodeURIComponent(code)}`);
+      if (res.success) setInvitePreviewHome(res.home);
     } catch {
-      // invalid code preview
+      // invalid code — preview simply stays empty
     }
+  };
+
+  const clearInviteFromUrl = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete('join');
+    url.searchParams.delete('code');
+    window.history.replaceState({}, '', url.pathname + url.search + url.hash);
   };
 
   // Initial Auth verification
@@ -183,27 +289,47 @@ export function App() {
     apiFetch('/auth/me')
       .then((res) => {
         if (res.success && res.user) {
-          setUser(res.user);
-          if (res.user.theme_pref) setTheme(res.user.theme_pref);
-          if (res.user.language_pref) setLang(res.user.language_pref);
-          loadHomes();
+          applyUser(res.user);
+          const code = new URLSearchParams(window.location.search).get('join');
+          if (code) joinHomeWithCode(code.toUpperCase());
+          else loadHomes();
         }
       })
-      .catch(() => {
-        setAuthToken(null);
-      })
+      .catch(() => setAuthToken(null))
       .finally(() => setIsAuthChecking(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load user's homes
-  const loadHomes = async () => {
+  const applyUser = (u: User) => {
+    setUser(u);
+    if (u.theme_pref) setTheme(u.theme_pref);
+    if (u.language_pref) setLang(u.language_pref);
+  };
+
+  /** Called after any successful sign-in / verification / password reset. */
+  const completeLogin = (token: string, u: User) => {
+    setAuthToken(token);
+    applyUser(u);
+    setAuthError('');
+    setAuthSuccess('');
+    setOtpCode('');
+    setResetForm({ code: '', password: '', confirmPassword: '' });
+    setAuthForm({ name: '', email: '', phone: '', password: '', confirmPassword: '' });
+    setAuthMode('signin');
+    if (incomingInviteCode) joinHomeWithCode(incomingInviteCode);
+    else loadHomes();
+  };
+
+  // Load user's homes (optionally switching to a specific home)
+  const loadHomes = async (preferHomeId?: number) => {
     try {
       const res = await apiFetch('/homes');
       if (res.success) {
         setHomes(res.homes);
-        if (res.homes.length > 0 && !currentHome) {
-          selectHome(res.homes[0]);
-        }
+        const targetId = preferHomeId ?? currentHomeIdRef.current;
+        const target = res.homes.find((h: Home) => h.id === targetId) || res.homes[0];
+        if (target && target.id !== currentHomeIdRef.current) selectHome(target);
+        else if (target) setCurrentHome(target);
       }
     } catch (err) {
       console.error(err);
@@ -212,28 +338,32 @@ export function App() {
 
   const selectHome = async (home: Home) => {
     setCurrentHome(home);
+    currentHomeIdRef.current = home.id;
     try {
       const res = await apiFetch(`/homes/${home.id}`);
-      if (res.success) {
-        setHomeMembers(res.members);
-      }
+      if (res.success) setHomeMembers(res.members);
       loadMessCycles(home.id);
     } catch (err) {
       console.error(err);
     }
   };
 
-  const loadMessCycles = async (homeId: number) => {
+  const loadMessCycles = async (homeId: number, preferMessId?: number) => {
     try {
       const res = await apiFetch(`/mess/home/${homeId}`);
       if (res.success) {
         setMessCycles(res.messCycles);
         if (res.messCycles.length > 0) {
-          selectMess(res.messCycles[0]);
+          const target = res.messCycles.find((m: MessCycle) => m.id === preferMessId) || res.messCycles[0];
+          selectMess(target);
         } else {
           setCurrentMess(null);
           setMealRecords([]);
+          setDailyMenus([]);
+          setBazaarList([]);
+          setDepositList([]);
           setSummaryData(null);
+          setCycleDates([]);
         }
       }
     } catch (err) {
@@ -243,10 +373,14 @@ export function App() {
 
   const selectMess = async (mess: MessCycle) => {
     setCurrentMess(mess);
+    // Keep "today" selected if it's inside the cycle, otherwise jump to the cycle's first day
+    const today = todayLocal();
+    setQuickDate(today >= mess.start_date && today <= mess.end_date ? today : mess.start_date);
     try {
       const detailRes = await apiFetch(`/mess/${mess.id}`);
       if (detailRes.success) {
         setCycleDates(detailRes.dates);
+        setHomeMembers(detailRes.members);
       }
       loadMealRecords(mess.id);
       loadDailyMenus(mess.id);
@@ -261,9 +395,7 @@ export function App() {
   const loadDailyMenus = async (messId: number) => {
     try {
       const res = await apiFetch(`/meals/${messId}/menu`);
-      if (res.success) {
-        setDailyMenus(res.menus);
-      }
+      if (res.success) setDailyMenus(res.menus);
     } catch (err) {
       console.error(err);
     }
@@ -271,8 +403,8 @@ export function App() {
 
   const openMenuModal = (dateStr: string) => {
     setMenuModalDate(dateStr);
-    const l = dailyMenus.find(m => m.date.split('T')[0] === dateStr && m.meal_type === 'lunch');
-    const d = dailyMenus.find(m => m.date.split('T')[0] === dateStr && m.meal_type === 'dinner');
+    const l = dailyMenus.find(m => m.date.slice(0, 10) === dateStr && m.meal_type === 'lunch');
+    const d = dailyMenus.find(m => m.date.slice(0, 10) === dateStr && m.meal_type === 'dinner');
     setMenuForm({
       lunch: { staple: l?.staple || '', main_dish: l?.main_dish || '', side_dish: l?.side_dish || '' },
       dinner: { staple: d?.staple || '', main_dish: d?.main_dish || '', side_dish: d?.side_dish || '' }
@@ -284,37 +416,25 @@ export function App() {
     e.preventDefault();
     if (!currentMess || !menuModalDate) return;
     try {
-      await Promise.all([
-        apiFetch(`/meals/${currentMess.id}/menu`, {
-          method: 'POST',
-          body: JSON.stringify({
-            date: menuModalDate,
-            meal_type: 'lunch',
-            ...menuForm.lunch
+      await Promise.all(
+        (['lunch', 'dinner'] as const).map((slot) =>
+          apiFetch(`/meals/${currentMess.id}/menu`, {
+            method: 'POST',
+            body: JSON.stringify({ date: menuModalDate, meal_type: slot, ...menuForm[slot] })
           })
-        }),
-        apiFetch(`/meals/${currentMess.id}/menu`, {
-          method: 'POST',
-          body: JSON.stringify({
-            date: menuModalDate,
-            meal_type: 'dinner',
-            ...menuForm.dinner
-          })
-        })
-      ]);
+        )
+      );
       await loadDailyMenus(currentMess.id);
       setShowMenuModal(false);
-    } catch (err: any) {
-      alert(err.message || 'Failed to save menu');
+    } catch (err) {
+      showError(err);
     }
   };
 
   const loadMealRecords = async (messId: number) => {
     try {
       const res = await apiFetch(`/meals/${messId}`);
-      if (res.success) {
-        setMealRecords(res.mealRecords);
-      }
+      if (res.success) setMealRecords(res.mealRecords);
     } catch (err) {
       console.error(err);
     }
@@ -323,9 +443,7 @@ export function App() {
   const loadBazaar = async (messId: number) => {
     try {
       const res = await apiFetch(`/bazaar/${messId}`);
-      if (res.success) {
-        setBazaarList(res.expenses);
-      }
+      if (res.success) setBazaarList(res.expenses);
     } catch (err) {
       console.error(err);
     }
@@ -334,9 +452,7 @@ export function App() {
   const loadDeposits = async (messId: number) => {
     try {
       const res = await apiFetch(`/deposits/${messId}`);
-      if (res.success) {
-        setDepositList(res.deposits);
-      }
+      if (res.success) setDepositList(res.deposits);
     } catch (err) {
       console.error(err);
     }
@@ -345,98 +461,165 @@ export function App() {
   const loadSummary = async (messId: number) => {
     try {
       const res = await apiFetch(`/summary/${messId}`);
-      if (res.success) {
-        setSummaryData(res.summary);
-      }
+      if (res.success) setSummaryData(res.summary);
     } catch (err) {
       console.error(err);
     }
   };
 
-  // Auth Submit
+  const switchAuthMode = (mode: AuthMode) => {
+    setAuthMode(mode);
+    setAuthError('');
+    setAuthSuccess('');
+  };
+
+  /** Moves to the "enter code" screen for email verification. */
+  const goToVerify = (email: string, info: string, codeSent = true) => {
+    setPendingEmail(email);
+    setOtpCode('');
+    setAuthMode('verify');
+    setAuthError('');
+    setAuthSuccess(info);
+    if (codeSent) setResendIn(RESEND_SECONDS);
+  };
+
+  // Sign In / Sign Up submit
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
-    if (authMode === 'signin') {
-      setAuthSuccess('');
-    }
+    setAuthSuccess('');
 
-    const emailTrimmed = authForm.email.trim();
-    const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-    if (!emailRegex.test(emailTrimmed)) {
-      setAuthError(lang === 'bn' ? 'সঠিক ইমেইল ফরম্যাট দিন (যেমন: iffat@example.com)' : 'Please enter a valid email address (e.g. iffat@example.com)');
+    const email = authForm.email.trim().toLowerCase();
+    if (!EMAIL_REGEX.test(email)) {
+      setAuthError(t.errors.INVALID_EMAIL);
       return;
     }
 
     if (authMode === 'signup') {
       const nameTrimmed = authForm.name.trim();
-      if (!nameTrimmed) {
-        setAuthError(lang === 'bn' ? 'আপনার নাম লিখুন' : 'Please enter your name');
-        return;
-      }
-      if (nameTrimmed.length < 2) {
-        setAuthError(lang === 'bn' ? 'নাম কমপক্ষে ২ অক্ষরের হতে হবে' : 'Name must be at least 2 characters');
-        return;
-      }
-      // Flexible name supporting Bangla or English, spaces, dots, dashes (e.g. Iffat Bin Hossain, ইফফাত বিন হোসেন)
-      const nameRegex = /^[\p{L}\p{M}\s.'-]+$/u;
-      if (!nameRegex.test(nameTrimmed)) {
-        setAuthError(lang === 'bn' ? 'নামে শুধু বাংলা বা ইংরেজি অক্ষর ব্যবহার করুন (যেমন: Iffat Bin Hossain)' : 'Please enter a valid name in English or Bangla (e.g. Iffat Bin Hossain)');
-        return;
-      }
-      if (authForm.password !== authForm.confirmPassword) {
-        setAuthError(t.passwordMismatch);
-        return;
-      }
-      if (authForm.password.length < 6) {
-        setAuthError(lang === 'bn' ? 'পাসওয়ার্ড কমপক্ষে ৬ অক্ষরের হতে হবে' : 'Password must be at least 6 characters');
-        return;
-      }
+      if (!nameTrimmed) return setAuthError(t.nameRequired);
+      if (nameTrimmed.length < 2) return setAuthError(t.nameTooShort);
+      if (!NAME_REGEX.test(nameTrimmed)) return setAuthError(t.nameInvalidChars);
+      if (!isStrongPassword(authForm.password)) return setAuthError(t.errors.WEAK_PASSWORD);
+      if (authForm.password !== authForm.confirmPassword) return setAuthError(t.passwordMismatch);
     }
 
+    setAuthLoading(true);
     try {
-      const endpoint = authMode === 'signup' ? '/auth/signup' : '/auth/signin';
-      const payload = authMode === 'signup'
-        ? {
-            name: authForm.name,
-            email: authForm.email,
-            phone: authForm.phone,
+      if (authMode === 'signup') {
+        await apiFetch('/auth/signup', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: authForm.name.trim(),
+            email,
+            phone: authForm.phone.trim(),
             password: authForm.password,
             language_pref: lang,
             theme_pref: theme
-          }
-        : {
-            email: authForm.email,
-            password: authForm.password
-          };
-      const res = await apiFetch(endpoint, {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
-      if (res.success) {
-        if (authMode === 'signup') {
-          // Account created successfully: notify user and redirect to sign in page
-          setAuthSuccess(t.accountCreatedSuccess);
-          setAuthMode('signin');
-          setAuthError('');
-          setAuthForm(prev => ({
-            ...prev,
-            password: '',
-            confirmPassword: ''
-          }));
-          return;
-        }
-
-        setAuthToken(res.token);
-        setUser(res.user);
-        loadHomes();
-        // If an invite code was pending in URL, join right away!
-        if (incomingInviteCode) {
-          joinHomeWithCode(incomingInviteCode);
-        }
+          })
+        });
+        setAuthForm(prev => ({ ...prev, password: '', confirmPassword: '' }));
+        goToVerify(email, t.checkSpam);
+        return;
       }
-    } catch (err: any) {
-      setAuthError(err.message || 'Authentication error');
+
+      const res = await apiFetch('/auth/signin', {
+        method: 'POST',
+        body: JSON.stringify({ email, password: authForm.password })
+      });
+      completeLogin(res.token, res.user);
+    } catch (err) {
+      const apiErr = err as ApiError;
+      if (apiErr.code === 'EMAIL_NOT_VERIFIED') {
+        goToVerify(apiErr.data?.email || email, t.verifyNeeded, Boolean(apiErr.data?.codeSent));
+        return;
+      }
+      setAuthError(errorMessage(t, err));
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleVerifyEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    if (!/^\d{6}$/.test(otpCode)) return setAuthError(t.errors.INVALID_CODE);
+    setAuthLoading(true);
+    try {
+      const res = await apiFetch('/auth/verify-email', {
+        method: 'POST',
+        body: JSON.stringify({ email: pendingEmail, code: otpCode })
+      });
+      completeLogin(res.token, res.user);
+    } catch (err) {
+      setAuthError(errorMessage(t, err));
+      if ((err as ApiError).code === 'ALREADY_VERIFIED') switchAuthMode('signin');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    if (resendIn > 0 || !pendingEmail) return;
+    setAuthError('');
+    setAuthSuccess('');
+    try {
+      const endpoint = authMode === 'reset' ? '/auth/forgot-password' : '/auth/resend-verification';
+      await apiFetch(endpoint, { method: 'POST', body: JSON.stringify({ email: pendingEmail }) });
+      setAuthSuccess(t.codeResent);
+      setResendIn(RESEND_SECONDS);
+    } catch (err) {
+      const retry = (err as ApiError).data?.retryAfter;
+      if (retry) setResendIn(retry);
+      setAuthError(errorMessage(t, err));
+    }
+  };
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    const email = authForm.email.trim().toLowerCase();
+    if (!EMAIL_REGEX.test(email)) return setAuthError(t.errors.INVALID_EMAIL);
+    setAuthLoading(true);
+    try {
+      await apiFetch('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
+      setPendingEmail(email);
+      setResetForm({ code: '', password: '', confirmPassword: '' });
+      setAuthMode('reset');
+      setAuthSuccess(`${t.resetCodeSent} ${t.checkSpam}`);
+      setResendIn(RESEND_SECONDS);
+    } catch (err) {
+      const apiErr = err as ApiError;
+      if (apiErr.code === 'RESEND_COOLDOWN') {
+        // A code was sent moments ago — let the user enter it
+        setPendingEmail(email);
+        setAuthMode('reset');
+        setResendIn(apiErr.data?.retryAfter || RESEND_SECONDS);
+        return;
+      }
+      setAuthError(errorMessage(t, err));
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError('');
+    if (!/^\d{6}$/.test(resetForm.code)) return setAuthError(t.errors.INVALID_CODE);
+    if (!isStrongPassword(resetForm.password)) return setAuthError(t.errors.WEAK_PASSWORD);
+    if (resetForm.password !== resetForm.confirmPassword) return setAuthError(t.passwordMismatch);
+    setAuthLoading(true);
+    try {
+      const res = await apiFetch('/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ email: pendingEmail, code: resetForm.code, password: resetForm.password })
+      });
+      completeLogin(res.token, res.user);
+    } catch (err) {
+      setAuthError(errorMessage(t, err));
+    } finally {
+      setAuthLoading(false);
     }
   };
 
@@ -452,34 +635,39 @@ export function App() {
       if (res.success) {
         setShowCreateHomeModal(false);
         setNewHomeForm({ name: '', address: '' });
-        await loadHomes();
-        selectHome(res.home);
+        await loadHomes(res.home.id);
       }
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      showError(err);
     }
   };
 
-  // Join Home with Code (Telegram-style)
+  // Join Home with invite code
   const joinHomeWithCode = async (code: string) => {
+    const clean = code.trim().toUpperCase();
+    if (!clean) return;
     try {
       const res = await apiFetch('/homes/join', {
         method: 'POST',
-        body: JSON.stringify({ invite_code: code })
+        body: JSON.stringify({ invite_code: clean })
       });
       if (res.success) {
         setIncomingInviteCode(null);
         setInvitePreviewHome(null);
         setShowJoinModal(false);
         setJoinCodeInput('');
-        await loadHomes();
+        clearInviteFromUrl();
+        await loadHomes(res.homeId);
       }
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      setIncomingInviteCode(null);
+      clearInviteFromUrl();
+      showError(err);
+      loadHomes();
     }
   };
 
-  // Create Mess Cycle (customizable, default 10 days!)
+  // Create Mess Cycle (customizable, default 10 days)
   const handleCreateMess = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentHome) return;
@@ -487,91 +675,77 @@ export function App() {
       const res = await apiFetch(`/mess/home/${currentHome.id}`, {
         method: 'POST',
         body: JSON.stringify({
-          name: newMessForm.name,
+          // Blank name → readable default in the user's language, e.g. "২৩ নভে – ২ ডিসে"
+          name: newMessForm.name.trim() || defaultMessName(newMessForm.start_date, newMessForm.duration_days, lang),
           duration_days: newMessForm.duration_days,
           start_date: newMessForm.start_date
         })
       });
       if (res.success) {
         setShowCreateMessModal(false);
-        setNewMessForm({
-          name: '',
-          duration_days: 10,
-          start_date: new Date().toISOString().split('T')[0]
-        });
-        await loadMessCycles(currentHome.id);
+        setNewMessForm({ name: '', duration_days: 10, start_date: todayLocal() });
+        await loadMessCycles(currentHome.id, res.messCycle.id);
       }
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      showError(err);
     }
   };
 
-  // 1-Tap Quick Toggle Today's Meal
+  const quickDateInCycle = cycleDates.includes(quickDate);
+
+  // 1-Tap Quick Toggle for the selected date
   const handleQuickMealToggle = async (mealType: 'lunch' | 'dinner') => {
     if (!currentMess || !user) return;
+    if (!quickDateInCycle) return showToast(t.dateOutsideMess);
     try {
       await apiFetch(`/meals/${currentMess.id}/quick-toggle`, {
         method: 'POST',
-        body: JSON.stringify({
-          date: quickDate,
-          meal_type: mealType
-        })
+        body: JSON.stringify({ date: quickDate, meal_type: mealType })
       });
       loadMealRecords(currentMess.id);
       loadSummary(currentMess.id);
     } catch (err) {
-      console.error(err);
+      showError(err);
     }
   };
 
-  // Update Individual Meal Record
+  // Update an individual meal cell in the sheet
   const handleUpdateMeal = async (userId: number, date: string, type: 'l' | 'd' | 'g', val: number) => {
     if (!currentMess) return;
-    const existing = mealRecords.find(r => r.user_id === userId && r.date.split('T')[0] === date);
-    const l = type === 'l' ? val : (existing ? parseFloat(existing.lunch) : 1);
-    const d = type === 'd' ? val : (existing ? parseFloat(existing.dinner) : 1);
+    const existing = mealRecords.find(r => r.user_id === userId && r.date.slice(0, 10) === date);
+    // A missing record means 0 meals — the same rule the summary uses
+    const l = type === 'l' ? val : (existing ? parseFloat(existing.lunch) : 0);
+    const d = type === 'd' ? val : (existing ? parseFloat(existing.dinner) : 0);
     const g = type === 'g' ? val : (existing ? parseFloat(existing.guest_meals) : 0);
 
     try {
       await apiFetch(`/meals/${currentMess.id}/record`, {
         method: 'POST',
-        body: JSON.stringify({
-          user_id: userId,
-          date,
-          breakfast: 0,
-          lunch: l,
-          dinner: d,
-          guest_meals: g
-        })
+        body: JSON.stringify({ user_id: userId, date, lunch: l, dinner: d, guest_meals: g })
       });
       loadMealRecords(currentMess.id);
       loadSummary(currentMess.id);
     } catch (err) {
-      console.error(err);
+      showError(err);
     }
   };
 
   // Add Bazaar
   const handleAddBazaar = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentMess || !bazaarForm.amount || !bazaarForm.items_description) return;
+    if (!currentMess || !bazaarForm.amount || !bazaarForm.items_description.trim()) return;
     try {
       const res = await apiFetch(`/bazaar/${currentMess.id}`, {
         method: 'POST',
         body: JSON.stringify(bazaarForm)
       });
       if (res.success) {
-        setBazaarForm({
-          amount: '',
-          items_description: '',
-          date: new Date().toISOString().split('T')[0],
-          buyer_id: ''
-        });
+        setBazaarForm({ amount: '', items_description: '', date: todayLocal(), buyer_id: '' });
         loadBazaar(currentMess.id);
         loadSummary(currentMess.id);
       }
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      showError(err);
     }
   };
 
@@ -585,31 +759,35 @@ export function App() {
         body: JSON.stringify(depositForm)
       });
       if (res.success) {
-        setDepositForm({
-          amount: '',
-          date: new Date().toISOString().split('T')[0],
-          user_id: '',
-          notes: ''
-        });
+        setDepositForm({ amount: '', date: todayLocal(), user_id: '', notes: '' });
         loadDeposits(currentMess.id);
         loadSummary(currentMess.id);
       }
-    } catch (err: any) {
-      alert(err.message);
+    } catch (err) {
+      showError(err);
     }
   };
 
-  // Copy Telegram-Style Invite Link
-  const copyInviteLink = () => {
+  const inviteUrl = currentHome ? `${window.location.origin}/?join=${currentHome.invite_code}` : '';
+
+  // Copy invite link (falls back to the native share sheet / manual copy if clipboard is blocked)
+  const copyInviteLink = async () => {
     if (!currentHome) return;
-    const url = `${window.location.origin}/?join=${currentHome.invite_code}`;
-    navigator.clipboard.writeText(url);
-    setCopiedInvite(true);
-    setTimeout(() => setCopiedInvite(false), 2500);
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopiedInvite(true);
+      setTimeout(() => setCopiedInvite(false), 2500);
+    } catch {
+      if (navigator.share) {
+        navigator.share({ title: currentHome.name, url: inviteUrl }).catch(() => {});
+      } else {
+        setShowInviteModal(true);
+      }
+    }
   };
 
   // Toggle Theme
-  const toggleTheme = async () => {
+  const toggleTheme = () => {
     const nextTheme = theme === 'light' ? 'dark' : 'light';
     setTheme(nextTheme);
     if (user) {
@@ -621,9 +799,10 @@ export function App() {
   };
 
   // Toggle Language
-  const toggleLanguage = async () => {
+  const toggleLanguage = () => {
     const nextLang = lang === 'bn' ? 'en' : 'bn';
     setLang(nextLang);
+    setAuthError('');
     if (user) {
       apiFetch('/auth/preferences', {
         method: 'PATCH',
@@ -637,12 +816,40 @@ export function App() {
     setUser(null);
     setHomes([]);
     setCurrentHome(null);
+    currentHomeIdRef.current = null;
+    setHomeMembers([]);
+    setMessCycles([]);
     setCurrentMess(null);
+    setMealRecords([]);
+    setDailyMenus([]);
+    setBazaarList([]);
+    setDepositList([]);
+    setSummaryData(null);
+    setCycleDates([]);
+    setActiveTab('meals');
+    setAuthMode('signin');
   };
 
-  // Quick meal state for today's user
+  // Quick meal state for the current user on the selected date
   const userTodayRecord = mealRecords.find(
-    r => r.user_id === user?.id && r.date.split('T')[0] === quickDate
+    r => r.user_id === user?.id && r.date.slice(0, 10) === quickDate
+  );
+
+  // Global toast + offline banner, rendered on every screen
+  const overlays = (
+    <>
+      {!isOnline && (
+        <div className="offline-banner" role="status">
+          <WifiOff size={14} /> {t.offlineNotice}
+        </div>
+      )}
+      {toast && (
+        <div className={`toast toast-${toast.type}`} role="alert" onClick={() => setToast(null)}>
+          {toast.type === 'error' ? <AlertCircle size={16} /> : <CheckCircle2 size={16} />}
+          <span>{toast.msg}</span>
+        </div>
+      )}
+    </>
   );
 
   if (isAuthChecking) {
@@ -653,8 +860,8 @@ export function App() {
     );
   }
 
-  // Telegram-style Invite Join Banner / Screen if opened via link
-  if (incomingInviteCode && !user) {
+  // Invite landing screen when a signed-out visitor opens an invite link
+  if (incomingInviteCode && !user && !inviteScreenDismissed) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
         <div style={{
@@ -669,7 +876,7 @@ export function App() {
         }} className="animate-slide-up">
           <img src={theme === 'dark' ? '/logo-dark-transparent.png' : '/logo-transparent.png'} alt="রসুইঘর" style={{ height: 72, width: 'auto', marginBottom: 12 }} />
           <h2 style={{ fontSize: 20, color: 'var(--brand-green)', marginBottom: 4 }}>
-            {invitePreviewHome ? invitePreviewHome.name : 'ঘর আমন্ত্রণ'}
+            {invitePreviewHome ? invitePreviewHome.name : t.homeInvite}
           </h2>
           <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 18 }}>
             {t.instJoinHome}
@@ -685,7 +892,8 @@ export function App() {
             <p style={{ fontWeight: 600, color: 'var(--brand-terracotta)' }}>{incomingInviteCode}</p>
             {invitePreviewHome && (
               <p style={{ color: 'var(--text-muted)', marginTop: 4 }}>
-                {invitePreviewHome.member_count} {t.membersCount}
+                {membersLabel(invitePreviewHome.member_count, t, lang)}
+                {invitePreviewHome.creator_name ? ` • ${t.invitedBy}: ${invitePreviewHome.creator_name}` : ''}
               </p>
             )}
           </div>
@@ -696,8 +904,8 @@ export function App() {
 
           <button
             onClick={() => {
-              setAuthMode('signup');
-              setIncomingInviteCode(incomingInviteCode);
+              setInviteScreenDismissed(true);
+              switchAuthMode('signup');
             }}
             style={{
               width: '100%',
@@ -712,7 +920,15 @@ export function App() {
               justifyContent: 'center',
               gap: 8
             }}>
-            {t.signUpAction} <ArrowRight size={16} />
+            {t.signUpToJoin} <ArrowRight size={16} />
+          </button>
+          <button
+            onClick={() => {
+              setInviteScreenDismissed(true);
+              switchAuthMode('signin');
+            }}
+            style={{ marginTop: 14, fontSize: 13, color: 'var(--brand-terracotta)', fontWeight: 600 }}>
+            {t.signInToJoin}
           </button>
         </div>
       </div>
@@ -775,237 +991,296 @@ export function App() {
               </button>
             </div>
 
-            {/* Mode Switch Pills */}
-            <div style={{
-              display: 'flex',
-              background: 'var(--bg-card-subtle)',
-              borderRadius: 'var(--radius-md)',
-              padding: 4,
-              marginBottom: 20,
-              border: '1px solid var(--border-color)'
-            }}>
-              <button
-                type="button"
-                onClick={() => { setAuthMode('signin'); setAuthError(''); }}
-                style={{
-                  flex: 1,
-                  padding: '9px 12px',
-                  borderRadius: 'var(--radius-sm)',
-                  fontSize: 14,
-                  fontWeight: 700,
-                  background: authMode === 'signin' ? 'var(--bg-card)' : 'transparent',
-                  color: authMode === 'signin' ? 'var(--brand-green)' : 'var(--text-muted)',
-                  boxShadow: authMode === 'signin' ? 'var(--shadow-sm)' : 'none'
-                }}>
-                {t.signIn}
-              </button>
-              <button
-                type="button"
-                onClick={() => { setAuthMode('signup'); setAuthError(''); setAuthSuccess(''); }}
-                style={{
-                  flex: 1,
-                  padding: '9px 12px',
-                  borderRadius: 'var(--radius-sm)',
-                  fontSize: 14,
-                  fontWeight: 700,
-                  background: authMode === 'signup' ? 'var(--bg-card)' : 'transparent',
-                  color: authMode === 'signup' ? 'var(--brand-green)' : 'var(--text-muted)',
-                  boxShadow: authMode === 'signup' ? 'var(--shadow-sm)' : 'none'
-                }}>
-                {t.signUp}
-              </button>
-            </div>
+            {/* Mode Switch Pills (only on the two main screens) */}
+            {(authMode === 'signin' || authMode === 'signup') && (
+              <div className="auth-pills">
+                <button
+                  type="button"
+                  className={authMode === 'signin' ? 'active' : ''}
+                  onClick={() => switchAuthMode('signin')}>
+                  {t.signIn}
+                </button>
+                <button
+                  type="button"
+                  className={authMode === 'signup' ? 'active' : ''}
+                  onClick={() => switchAuthMode('signup')}>
+                  {t.signUp}
+                </button>
+              </div>
+            )}
+
+            {/* Heading for code / reset screens */}
+            {authMode === 'verify' && (
+              <div className="auth-step-head">
+                <div className="auth-step-icon"><ShieldCheck size={22} /></div>
+                <h2>{t.verifyTitle}</h2>
+                <p>{t.verifySubtitle} <strong>{pendingEmail}</strong></p>
+              </div>
+            )}
+            {authMode === 'forgot' && (
+              <div className="auth-step-head">
+                <div className="auth-step-icon"><Mail size={22} /></div>
+                <h2>{t.forgotTitle}</h2>
+                <p>{t.forgotSubtitle}</p>
+              </div>
+            )}
+            {authMode === 'reset' && (
+              <div className="auth-step-head">
+                <div className="auth-step-icon"><KeyRound size={22} /></div>
+                <h2>{t.resetTitle}</h2>
+                <p>{t.resetSubtitle} <strong>{pendingEmail}</strong></p>
+              </div>
+            )}
 
             {authSuccess && (
-              <div style={{
-                background: 'var(--badge-success-bg)',
-                color: 'var(--badge-success-text)',
-                padding: '11px 14px',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: 13,
-                fontWeight: 600,
-                marginBottom: 16,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                border: '1px solid rgba(16, 185, 129, 0.3)'
-              }}>
-                <CheckCircle2 size={16} /> {authSuccess}
+              <div className="auth-alert auth-alert-success" role="status">
+                <CheckCircle2 size={16} /> <span>{authSuccess}</span>
               </div>
             )}
-
             {authError && (
-              <div style={{
-                background: 'var(--badge-due-bg)',
-                color: 'var(--badge-due-text)',
-                padding: '10px 14px',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: 13,
-                fontWeight: 600,
-                marginBottom: 16,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                border: '1px solid rgba(239, 68, 68, 0.2)'
-              }}>
-                <AlertCircle size={16} /> {authError}
+              <div className="auth-alert auth-alert-error" role="alert">
+                <AlertCircle size={16} /> <span>{authError}</span>
               </div>
             )}
 
-            <form onSubmit={handleAuthSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {authMode === 'signup' && (
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-main)', display: 'block', marginBottom: 5 }}>
-                    {t.name}
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Iffat Bin Hossain"
-                    value={authForm.name}
-                    onChange={(e) => setAuthForm({ ...authForm, name: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '10px 14px',
-                      borderRadius: 'var(--radius-sm)',
-                      fontSize: 14
-                    }}
-                  />
-                </div>
-              )}
-
-              <div>
-                <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-main)', display: 'block', marginBottom: 5 }}>
-                  {t.email}
-                </label>
-                <input
-                  type="email"
-                  required
-                  placeholder="e.g. iffat@example.com"
-                  value={authForm.email}
-                  onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: 'var(--radius-sm)',
-                    fontSize: 14
-                  }}
-                />
-              </div>
-
-              {authMode === 'signup' && (
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-main)', display: 'block', marginBottom: 5 }}>
-                    {t.phone} <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>({lang === 'bn' ? 'ঐচ্ছিক' : 'Optional'})</span>
-                  </label>
-                  <input
-                    type="tel"
-                    placeholder="e.g. +880 1712 345678"
-                    value={authForm.phone}
-                    onChange={(e) => setAuthForm({ ...authForm, phone: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '10px 14px',
-                      borderRadius: 'var(--radius-sm)',
-                      fontSize: 14
-                    }}
-                  />
-                </div>
-              )}
-
-              <div>
-                <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-main)', display: 'block', marginBottom: 5 }}>
-                  {t.password}
-                </label>
-                <div className="password-input-wrapper">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    placeholder="Enter your password"
-                    value={authForm.password}
-                    onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '10px 14px',
-                      borderRadius: 'var(--radius-sm)',
-                      fontSize: 14
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="password-toggle-btn"
-                    onClick={() => setShowPassword(!showPassword)}
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                    title={showPassword ? 'Hide password' : 'Show password'}
-                  >
-                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-              </div>
-
-              {authMode === 'signup' && (
-                <div>
-                  <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-main)', display: 'block', marginBottom: 5 }}>
-                    {t.confirmPassword}
-                  </label>
-                  <div className="password-input-wrapper">
+            {/* ── SIGN IN / SIGN UP ── */}
+            {(authMode === 'signin' || authMode === 'signup') && (
+              <form onSubmit={handleAuthSubmit} className="auth-form" noValidate>
+                {authMode === 'signup' && (
+                  <div>
+                    <label className="auth-label" htmlFor="auth-name">{t.name}</label>
                     <input
-                      type={showConfirmPassword ? 'text' : 'password'}
+                      id="auth-name"
+                      className="auth-input"
+                      type="text"
+                      autoComplete="name"
                       required
-                      placeholder="Re-enter your password"
-                      value={authForm.confirmPassword}
-                      onChange={(e) => setAuthForm({ ...authForm, confirmPassword: e.target.value })}
-                      style={{
-                        width: '100%',
-                        padding: '10px 14px',
-                        borderRadius: 'var(--radius-sm)',
-                        fontSize: 14
-                      }}
+                      placeholder={t.namePlaceholder}
+                      value={authForm.name}
+                      onChange={(e) => setAuthForm({ ...authForm, name: e.target.value })}
                     />
-                    <button
-                      type="button"
-                      className="password-toggle-btn"
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
-                      title={showConfirmPassword ? 'Hide password' : 'Show password'}
-                    >
-                      {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
                   </div>
+                )}
+
+                <div>
+                  <label className="auth-label" htmlFor="auth-email">{t.email}</label>
+                  <input
+                    id="auth-email"
+                    className="auth-input"
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    required
+                    placeholder={t.emailPlaceholder}
+                    value={authForm.email}
+                    onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
+                  />
                 </div>
-              )}
 
-              <button
-                type="submit"
-                style={{
-                  marginTop: 6,
-                  background: 'var(--brand-green)',
-                  color: '#FFFFFF',
-                  padding: '12px',
-                  borderRadius: 'var(--radius-md)',
-                  fontWeight: 700,
-                  fontSize: 15,
-                  boxShadow: 'var(--shadow-sm)'
-                }}>
-                {authMode === 'signup' ? t.signUpAction : t.signInAction}
-              </button>
-            </form>
+                {authMode === 'signup' && (
+                  <div>
+                    <label className="auth-label" htmlFor="auth-phone">
+                      {t.phone} <span className="auth-label-muted">({t.optional})</span>
+                    </label>
+                    <input
+                      id="auth-phone"
+                      className="auth-input"
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      placeholder={t.phonePlaceholder}
+                      value={authForm.phone}
+                      onChange={(e) => setAuthForm({ ...authForm, phone: e.target.value })}
+                    />
+                  </div>
+                )}
 
+                <div>
+                  <div className="auth-label-row">
+                    <label className="auth-label" htmlFor="auth-password">{t.password}</label>
+                    {authMode === 'signin' && (
+                      <button
+                        type="button"
+                        className="link-btn"
+                        onClick={() => switchAuthMode('forgot')}>
+                        {t.forgotPassword}
+                      </button>
+                    )}
+                  </div>
+                  <PasswordInput
+                    id="auth-password"
+                    value={authForm.password}
+                    onChange={(v) => setAuthForm({ ...authForm, password: v })}
+                    visible={showPassword}
+                    onToggle={() => setShowPassword(!showPassword)}
+                    placeholder={authMode === 'signup' ? t.newPasswordPlaceholder : t.passwordPlaceholder}
+                    autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'}
+                    showLabel={t.showPassword}
+                    hideLabel={t.hidePassword}
+                  />
+                  {authMode === 'signup' && <p className="auth-hint">{t.passwordHint}</p>}
+                </div>
+
+                {authMode === 'signup' && (
+                  <div>
+                    <label className="auth-label" htmlFor="auth-confirm">{t.confirmPassword}</label>
+                    <PasswordInput
+                      id="auth-confirm"
+                      value={authForm.confirmPassword}
+                      onChange={(v) => setAuthForm({ ...authForm, confirmPassword: v })}
+                      visible={showConfirmPassword}
+                      onToggle={() => setShowConfirmPassword(!showConfirmPassword)}
+                      placeholder={t.confirmPasswordPlaceholder}
+                      autoComplete="new-password"
+                      showLabel={t.showPassword}
+                      hideLabel={t.hidePassword}
+                    />
+                  </div>
+                )}
+
+                <button type="submit" className="auth-btn-primary" disabled={authLoading}>
+                  {authLoading && <Loader2 size={16} className="spin" />}
+                  {authLoading ? t.pleaseWait : authMode === 'signup' ? t.signUpAction : t.signInAction}
+                </button>
+              </form>
+            )}
+
+            {/* ── VERIFY EMAIL (6-digit code) ── */}
+            {authMode === 'verify' && (
+              <form onSubmit={handleVerifyEmail} className="auth-form" noValidate>
+                <div>
+                  <label className="auth-label" htmlFor="otp-code">{t.codeLabel}</label>
+                  <input
+                    id="otp-code"
+                    className="auth-input otp-input"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    placeholder="••••••"
+                    autoFocus
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  />
+                </div>
+                <button type="submit" className="auth-btn-primary" disabled={authLoading || otpCode.length !== 6}>
+                  {authLoading && <Loader2 size={16} className="spin" />}
+                  {authLoading ? t.pleaseWait : t.verifyAction}
+                </button>
+                <ResendRow resendIn={resendIn} lang={lang} t={t} onResend={handleResendCode} />
+                <button type="button" className="link-btn link-btn-center" onClick={() => switchAuthMode('signup')}>
+                  {t.changeEmail}
+                </button>
+              </form>
+            )}
+
+            {/* ── FORGOT PASSWORD (request code) ── */}
+            {authMode === 'forgot' && (
+              <form onSubmit={handleForgotPassword} className="auth-form" noValidate>
+                <div>
+                  <label className="auth-label" htmlFor="forgot-email">{t.email}</label>
+                  <input
+                    id="forgot-email"
+                    className="auth-input"
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    autoFocus
+                    placeholder={t.emailPlaceholder}
+                    value={authForm.email}
+                    onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
+                  />
+                </div>
+                <button type="submit" className="auth-btn-primary" disabled={authLoading}>
+                  {authLoading && <Loader2 size={16} className="spin" />}
+                  {authLoading ? t.pleaseWait : t.sendCode}
+                </button>
+              </form>
+            )}
+
+            {/* ── RESET PASSWORD (code + new password) ── */}
+            {authMode === 'reset' && (
+              <form onSubmit={handleResetPassword} className="auth-form" noValidate>
+                <div>
+                  <label className="auth-label" htmlFor="reset-code">{t.codeLabel}</label>
+                  <input
+                    id="reset-code"
+                    className="auth-input otp-input"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={6}
+                    placeholder="••••••"
+                    autoFocus
+                    value={resetForm.code}
+                    onChange={(e) => setResetForm({ ...resetForm, code: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                  />
+                </div>
+                <div>
+                  <label className="auth-label" htmlFor="reset-password">{t.newPassword}</label>
+                  <PasswordInput
+                    id="reset-password"
+                    value={resetForm.password}
+                    onChange={(v) => setResetForm({ ...resetForm, password: v })}
+                    visible={showPassword}
+                    onToggle={() => setShowPassword(!showPassword)}
+                    placeholder={t.newPasswordPlaceholder}
+                    autoComplete="new-password"
+                    showLabel={t.showPassword}
+                    hideLabel={t.hidePassword}
+                  />
+                  <p className="auth-hint">{t.passwordHint}</p>
+                </div>
+                <div>
+                  <label className="auth-label" htmlFor="reset-confirm">{t.confirmPassword}</label>
+                  <PasswordInput
+                    id="reset-confirm"
+                    value={resetForm.confirmPassword}
+                    onChange={(v) => setResetForm({ ...resetForm, confirmPassword: v })}
+                    visible={showConfirmPassword}
+                    onToggle={() => setShowConfirmPassword(!showConfirmPassword)}
+                    placeholder={t.confirmPasswordPlaceholder}
+                    autoComplete="new-password"
+                    showLabel={t.showPassword}
+                    hideLabel={t.hidePassword}
+                  />
+                </div>
+                <button type="submit" className="auth-btn-primary" disabled={authLoading}>
+                  {authLoading && <Loader2 size={16} className="spin" />}
+                  {authLoading ? t.pleaseWait : t.resetAction}
+                </button>
+                <ResendRow resendIn={resendIn} lang={lang} t={t} onResend={handleResendCode} />
+              </form>
+            )}
+
+            {/* Footer link */}
             <div style={{ textAlign: 'center', marginTop: 18 }}>
-              <button
-                type="button"
-                onClick={() => {
-                  const nextMode = authMode === 'signin' ? 'signup' : 'signin';
-                  setAuthMode(nextMode);
-                  setAuthError('');
-                  if (nextMode === 'signup') setAuthSuccess('');
-                }}
-                style={{ fontSize: 13, color: 'var(--brand-terracotta)', fontWeight: 600 }}>
-                {authMode === 'signin' ? t.dontHaveAccount : t.alreadyHaveAccount}
-              </button>
+              {authMode === 'signin' || authMode === 'signup' ? (
+                <button
+                  type="button"
+                  className="link-btn"
+                  onClick={() => switchAuthMode(authMode === 'signin' ? 'signup' : 'signin')}>
+                  {authMode === 'signin' ? t.dontHaveAccount : t.alreadyHaveAccount}
+                </button>
+              ) : (
+                <button type="button" className="link-btn" onClick={() => switchAuthMode('signin')}>
+                  <ArrowLeft size={13} style={{ verticalAlign: '-2px' }} /> {t.backToSignIn.replace(/^←\s*/, '')}
+                </button>
+              )}
             </div>
+
+            {installPrompt && (
+              <button type="button" className="install-btn" onClick={handleInstall}>
+                <Download size={14} /> {t.installApp}
+              </button>
+            )}
           </div>
         </div>
+        {overlays}
       </div>
     );
   }
@@ -1103,9 +1378,14 @@ export function App() {
 
           {/* Right Controls: Theme, Language, Profile, UI-Compatible Logout */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {installPrompt && (
+              <button onClick={handleInstall} title={t.installApp} className="install-btn install-btn-compact">
+                <Download size={14} /> <span>{t.installApp}</span>
+              </button>
+            )}
             <button
               onClick={toggleLanguage}
-              title="Change Language"
+              title={t.changeLanguage}
               style={{
                 padding: '6px 10px',
                 borderRadius: 'var(--radius-sm)',
@@ -1123,7 +1403,7 @@ export function App() {
 
             <button
               onClick={toggleTheme}
-              title="Toggle Theme"
+              title={t.toggleTheme}
               style={{
                 padding: 7,
                 borderRadius: 'var(--radius-sm)',
@@ -1281,7 +1561,7 @@ export function App() {
                       borderRadius: 'var(--radius-full)',
                       fontWeight: 600
                     }}>
-                      {homeMembers.length} {t.membersCount}
+                      {membersLabel(homeMembers.length, t, lang)}
                     </span>
                   </div>
                   {currentHome.address && (
@@ -1361,7 +1641,7 @@ export function App() {
                     }}>
                     {messCycles.map(m => (
                       <option key={m.id} value={m.id}>
-                        {m.name} ({m.duration_days} দিন)
+                        {m.name} ({formatNum(m.duration_days, lang, 0)} {t.days})
                       </option>
                     ))}
                   </select>
@@ -1423,18 +1703,13 @@ export function App() {
               </div>
             ) : (
               <>
-                {/* 1-Tap Quick Action Bar for Today */}
+                {/* 1-Tap Quick Action Bar for the selected date (header on top, slots below) */}
                 <div style={{
                   background: 'var(--bg-card)',
                   borderRadius: 'var(--radius-md)',
                   border: '1px solid var(--border-color)',
-                  padding: '12px 18px',
-                  marginBottom: 16,
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 12
+                  padding: '14px 18px 18px',
+                  marginBottom: 16
                 }}>
                   {/* Card Header: Title, Date Picker, Edit Menu Button */}
                   <div style={{
@@ -1474,6 +1749,8 @@ export function App() {
                       <input
                         type="date"
                         value={quickDate}
+                        min={currentMess.start_date}
+                        max={currentMess.end_date}
                         onChange={(e) => setQuickDate(e.target.value)}
                         style={{
                           background: 'var(--bg-card-subtle)',
@@ -1510,17 +1787,21 @@ export function App() {
 
                   {/* 2 Meal Slots Grid: Lunch & Dinner */}
                   {(() => {
-                    const selRecords = mealRecords.filter(r => r.date.split('T')[0] === quickDate);
+                    const selRecords = mealRecords.filter(r => r.date.slice(0, 10) === quickDate);
                     const lActive = userTodayRecord && parseFloat(userTodayRecord.lunch) > 0;
                     const dActive = userTodayRecord && parseFloat(userTodayRecord.dinner) > 0;
 
                     const lCount = selRecords.filter(r => parseFloat(r.lunch) > 0).length;
                     const dCount = selRecords.filter(r => parseFloat(r.dinner) > 0).length;
 
-                    const lMenu = dailyMenus.find(m => m.date.split('T')[0] === quickDate && m.meal_type === 'lunch');
-                    const dMenu = dailyMenus.find(m => m.date.split('T')[0] === quickDate && m.meal_type === 'dinner');
+                    const lMenu = dailyMenus.find(m => m.date.slice(0, 10) === quickDate && m.meal_type === 'lunch');
+                    const dMenu = dailyMenus.find(m => m.date.slice(0, 10) === quickDate && m.meal_type === 'dinner');
 
                     return (
+                      <>
+                      {!quickDateInCycle && (
+                        <p className="inline-warning"><AlertCircle size={14} /> {t.dateOutsideMess}</p>
+                      )}
                       <div style={{
                         display: 'grid',
                         gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
@@ -1554,7 +1835,7 @@ export function App() {
                                 color: 'var(--text-muted)',
                                 fontWeight: 600
                               }}>
-                                {lCount} {t.membersCount}
+                                {membersLabel(lCount, t, lang)}
                               </span>
                             </div>
 
@@ -1584,6 +1865,7 @@ export function App() {
                           {/* Attendance Toggle */}
                           <button
                             onClick={() => handleQuickMealToggle('lunch')}
+                            disabled={!quickDateInCycle}
                             style={{
                               width: '100%',
                               display: 'flex',
@@ -1633,7 +1915,7 @@ export function App() {
                                 color: 'var(--text-muted)',
                                 fontWeight: 600
                               }}>
-                                {dCount} {t.membersCount}
+                                {membersLabel(dCount, t, lang)}
                               </span>
                             </div>
 
@@ -1663,6 +1945,7 @@ export function App() {
                           {/* Attendance Toggle */}
                           <button
                             onClick={() => handleQuickMealToggle('dinner')}
+                            disabled={!quickDateInCycle}
                             style={{
                               width: '100%',
                               display: 'flex',
@@ -1684,6 +1967,7 @@ export function App() {
                           </button>
                         </div>
                       </div>
+                      </>
                     );
                   })()}
                 </div>
@@ -1745,11 +2029,11 @@ export function App() {
                           {t.instUpdateMeal}
                         </p>
                         <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '2px 0 0' }}>
-                          ☀️ {t.lunch} ({lang === 'bn' ? 'দুপুর' : 'L'}) • 🌙 {t.dinner} ({lang === 'bn' ? 'রাত' : 'D'})
+                          ☀️ {t.lunchShort} = {t.lunch} • 🌙 {t.dinnerShort} = {t.dinner}
                         </p>
                       </div>
                       <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        {currentMess.name} ({currentMess.duration_days} {t.days})
+                        {currentMess.name} ({formatNum(currentMess.duration_days, lang, 0)} {t.days})
                       </span>
                     </div>
 
@@ -1767,14 +2051,14 @@ export function App() {
                       </thead>
                       <tbody>
                         {cycleDates.map(d => {
-                          const dateMenus = dailyMenus.filter(m => m.date.split('T')[0] === d);
+                          const dateMenus = dailyMenus.filter(m => m.date.slice(0, 10) === d);
                           const lM = dateMenus.find(m => m.meal_type === 'lunch');
                           const dM = dateMenus.find(m => m.meal_type === 'dinner');
 
                           return (
                             <tr key={d} style={{ borderBottom: '1px solid var(--border-color)' }}>
                               <td style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: 'var(--brand-green)', whiteSpace: 'nowrap' }}>
-                                {d.slice(5)}
+                                {formatDate(d, lang)}
                               </td>
                               <td style={{ padding: '8px 12px', textAlign: 'left' }}>
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
@@ -1805,10 +2089,12 @@ export function App() {
                                 </div>
                               </td>
                               {homeMembers.map(m => {
-                                const record = mealRecords.find(r => r.user_id === m.user_id && r.date.split('T')[0] === d);
-                                const l = record ? parseFloat(record.lunch) : 1;
-                                const din = record ? parseFloat(record.dinner) : 1;
-                                const tot = (l + din).toFixed(1);
+                                const record = mealRecords.find(r => r.user_id === m.user_id && r.date.slice(0, 10) === d);
+                                // No record = no meals (matches the summary calculation)
+                                const l = record ? parseFloat(record.lunch) : 0;
+                                const din = record ? parseFloat(record.dinner) : 0;
+                                const guest = record ? parseFloat(record.guest_meals) : 0;
+                                const tot = formatNum(l + din + guest, lang, 1);
 
                                 return (
                                   <td key={m.user_id} style={{ padding: '6px 8px' }}>
@@ -1827,7 +2113,7 @@ export function App() {
                                           color: l > 0 ? '#FFF' : 'var(--text-muted)',
                                           border: l > 0 ? 'none' : '1px solid var(--border-color)'
                                         }}>
-                                        {lang === 'bn' ? 'দ' : 'L'}
+                                        {t.lunchShort}
                                       </button>
                                       {/* Dinner Slot */}
                                       <button
@@ -1843,7 +2129,7 @@ export function App() {
                                           color: din > 0 ? '#FFF' : 'var(--text-muted)',
                                           border: din > 0 ? 'none' : '1px solid var(--border-color)'
                                         }}>
-                                        {lang === 'bn' ? 'র' : 'D'}
+                                        {t.dinnerShort}
                                       </button>
                                     </div>
                                     <span style={{ fontSize: 10, color: 'var(--text-muted)', display: 'block', marginTop: 2, fontWeight: 600 }}>
@@ -1876,7 +2162,10 @@ export function App() {
                       <form onSubmit={handleAddBazaar} style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
                         <input
                           type="number"
-                          placeholder="Amount in BDT (৳)"
+                          inputMode="decimal"
+                          min="0.01"
+                          step="any"
+                          placeholder={t.amountPlaceholder}
                           required
                           value={bazaarForm.amount}
                           onChange={(e) => setBazaarForm({ ...bazaarForm, amount: e.target.value })}
@@ -1892,7 +2181,7 @@ export function App() {
                         />
                         <input
                           type="text"
-                          placeholder="e.g. Rice, Lentils, Oil, Fish"
+                          placeholder={t.itemsPlaceholder}
                           required
                           value={bazaarForm.items_description}
                           onChange={(e) => setBazaarForm({ ...bazaarForm, items_description: e.target.value })}
@@ -1931,7 +2220,7 @@ export function App() {
                             fontSize: 13
                           }}>
                           <option value="">{user.name} ({t.buyer})</option>
-                          {homeMembers.map(m => (
+                          {homeMembers.filter(m => m.user_id !== user.id).map(m => (
                             <option key={m.user_id} value={m.user_id}>{m.name}</option>
                           ))}
                         </select>
@@ -1959,7 +2248,7 @@ export function App() {
                     }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
                         <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-main)' }}>
-                          {t.totalBazaarLabel}: ৳{summaryData?.totalBazaar || 0}
+                          {t.totalBazaarLabel}: {formatMoney(summaryData?.totalBazaar || 0, lang)}
                         </span>
                       </div>
                       {bazaarList.length === 0 ? (
@@ -1983,11 +2272,11 @@ export function App() {
                                   {b.items_description}
                                 </p>
                                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                                  {b.buyer_name} • {b.date.slice(0, 10)}
+                                  {b.buyer_name} • {formatDate(b.date, lang)}
                                 </span>
                               </div>
                               <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--brand-terracotta)' }}>
-                                ৳{b.amount}
+                                {formatMoney(b.amount, lang)}
                               </span>
                             </div>
                           ))}
@@ -2023,12 +2312,15 @@ export function App() {
                             fontSize: 13
                           }}>
                           <option value="">{user.name} ({t.member})</option>
-                          {homeMembers.map(m => (
+                          {homeMembers.filter(m => m.user_id !== user.id).map(m => (
                             <option key={m.user_id} value={m.user_id}>{m.name}</option>
                           ))}
                         </select>
                         <input
                           type="number"
+                          inputMode="decimal"
+                          min="0.01"
+                          step="any"
                           placeholder={t.amountPlaceholder}
                           required
                           value={depositForm.amount}
@@ -2080,7 +2372,7 @@ export function App() {
                     }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
                         <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-main)' }}>
-                          {t.totalDepositLabel}: ৳{summaryData?.totalDeposits || 0}
+                          {t.totalDepositLabel}: {formatMoney(summaryData?.totalDeposits || 0, lang)}
                         </span>
                       </div>
                       {depositList.length === 0 ? (
@@ -2104,11 +2396,11 @@ export function App() {
                                   {d.user_name}
                                 </p>
                                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                                  {d.date.slice(0, 10)}
+                                  {formatDate(d.date, lang)}
                                 </span>
                               </div>
                               <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--brand-green)' }}>
-                                ৳{d.amount}
+                                {formatMoney(d.amount, lang)}
                               </span>
                             </div>
                           ))}
@@ -2132,7 +2424,7 @@ export function App() {
                       }}>
                         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t.totalMeals}</span>
                         <h3 style={{ fontSize: 24, fontWeight: 700, color: 'var(--brand-green)', marginTop: 4 }}>
-                          {summaryData.totalMeals}
+                          {formatNum(summaryData.totalMeals, lang, 1)}
                         </h3>
                       </div>
 
@@ -2145,7 +2437,7 @@ export function App() {
                       }}>
                         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t.totalBazaarCost}</span>
                         <h3 style={{ fontSize: 24, fontWeight: 700, color: 'var(--brand-terracotta)', marginTop: 4 }}>
-                          ৳{summaryData.totalBazaar}
+                          {formatMoney(summaryData.totalBazaar, lang)}
                         </h3>
                       </div>
 
@@ -2158,7 +2450,7 @@ export function App() {
                       }}>
                         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t.mealRate}</span>
                         <h3 style={{ fontSize: 24, fontWeight: 700, color: 'var(--brand-green)', marginTop: 4 }}>
-                          ৳{summaryData.mealRate}
+                          {formatMoney(summaryData.mealRate, lang)}
                         </h3>
                         <p style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t.perMealFormula}</p>
                       </div>
@@ -2172,7 +2464,7 @@ export function App() {
                       }}>
                         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t.totalCashDeposit}</span>
                         <h3 style={{ fontSize: 24, fontWeight: 700, color: 'var(--brand-green)', marginTop: 4 }}>
-                          ৳{summaryData.totalDeposits}
+                          {formatMoney(summaryData.totalDeposits, lang)}
                         </h3>
                       </div>
                     </div>
@@ -2215,15 +2507,15 @@ export function App() {
                             <div style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: 4 }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                 <span>{t.totalMeals}:</span>
-                                <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{m.meals.total}</span>
+                                <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{formatNum(m.meals.total, lang, 1)}</span>
                               </div>
                               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                 <span>{t.costFormula}:</span>
-                                <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>৳{m.mealCost}</span>
+                                <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{formatMoney(m.mealCost, lang)}</span>
                               </div>
                               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                                 <span>{t.depositGiven}:</span>
-                                <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>৳{m.deposit}</span>
+                                <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{formatMoney(m.deposit, lang)}</span>
                               </div>
                               <div style={{
                                 display: 'flex',
@@ -2236,7 +2528,7 @@ export function App() {
                                 color: m.balance >= 0 ? 'var(--badge-success-text)' : 'var(--badge-due-text)'
                               }}>
                                 <span>{t.netBalance}:</span>
-                                <span>{m.balance >= 0 ? `+৳${m.balance}` : `-৳${Math.abs(m.balance)}`}</span>
+                                <span>{m.balance >= 0 ? `+${formatMoney(m.balance, lang)}` : `−${formatMoney(Math.abs(m.balance), lang)}`}</span>
                               </div>
                             </div>
                           </div>
@@ -2256,7 +2548,7 @@ export function App() {
                   }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                       <h3 style={{ fontSize: 16, fontWeight: 600, color: 'var(--brand-green)' }}>
-                        {t.tabMembers} ({homeMembers.length})
+                        {t.tabMembers} ({formatNum(homeMembers.length, lang, 0)})
                       </h3>
                       <button
                         onClick={copyInviteLink}
@@ -2450,10 +2742,14 @@ export function App() {
               {t.inviteCodePrompt}
             </p>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <form
+              onSubmit={(e) => { e.preventDefault(); joinHomeWithCode(joinCodeInput); }}
+              style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <input
                 type="text"
-                placeholder="e.g. HOME-XXXXXX"
+                autoCapitalize="characters"
+                autoFocus
+                placeholder={t.inviteCodePlaceholder}
                 value={joinCodeInput}
                 onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
                 style={{
@@ -2483,8 +2779,8 @@ export function App() {
                   {t.cancel}
                 </button>
                 <button
-                  type="button"
-                  onClick={() => joinHomeWithCode(joinCodeInput)}
+                  type="submit"
+                  disabled={!joinCodeInput.trim()}
                   style={{
                     flex: 1,
                     padding: 10,
@@ -2497,7 +2793,7 @@ export function App() {
                   {t.joinAction}
                 </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       )}
@@ -2543,7 +2839,7 @@ export function App() {
               color: 'var(--text-main)',
               fontFamily: 'monospace'
             }}>
-              {window.location.origin}/?join={currentHome.invite_code}
+              {inviteUrl}
             </div>
 
             <button
@@ -2614,7 +2910,7 @@ export function App() {
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. October 1-10 Mess"
+                  placeholder={t.cycleNamePlaceholder}
                   value={newMessForm.name}
                   onChange={(e) => setNewMessForm({ ...newMessForm, name: e.target.value })}
                   style={{
@@ -2631,7 +2927,7 @@ export function App() {
 
               <div>
                 <label style={{ fontSize: 12, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>
-                  {t.cycleDuration}: {newMessForm.duration_days} {t.days}
+                  {t.cycleDuration}: {formatNum(newMessForm.duration_days, lang, 0)} {t.days}
                 </label>
                 {/* Duration Pills */}
                 <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
@@ -2649,7 +2945,7 @@ export function App() {
                         color: newMessForm.duration_days === days ? '#FFF' : 'var(--text-main)',
                         border: '1px solid var(--border-color)'
                       }}>
-                      {days} {t.days} {days === 10 ? t.defaultTag : ''}
+                      {formatNum(days, lang, 0)} {t.days} {days === 10 ? t.defaultTag : ''}
                     </button>
                   ))}
                 </div>
@@ -2754,12 +3050,13 @@ export function App() {
                   {t.mealMenu}
                 </h3>
                 <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  {t.date}: {menuModalDate}
+                  {t.date}: {formatDate(menuModalDate, lang, true)}
                 </span>
               </div>
               <button
                 type="button"
                 onClick={() => setShowMenuModal(false)}
+                aria-label={t.closeAction}
                 style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16 }}>
                 ✕
               </button>
@@ -2878,8 +3175,61 @@ export function App() {
           </div>
         </div>
       )}
+      {overlays}
     </div>
   );
 }
 
 export default App;
+
+/* ───────────── Small presentational helpers (defined outside App so inputs keep focus) ───────────── */
+
+function PasswordInput(props: {
+  id: string;
+  value: string;
+  onChange: (v: string) => void;
+  visible: boolean;
+  onToggle: () => void;
+  placeholder: string;
+  autoComplete: string;
+  showLabel: string;
+  hideLabel: string;
+}) {
+  return (
+    <div className="password-input-wrapper">
+      <input
+        id={props.id}
+        className="auth-input"
+        type={props.visible ? 'text' : 'password'}
+        required
+        autoComplete={props.autoComplete}
+        placeholder={props.placeholder}
+        value={props.value}
+        onChange={(e) => props.onChange(e.target.value)}
+      />
+      <button
+        type="button"
+        className="password-toggle-btn"
+        onClick={props.onToggle}
+        aria-label={props.visible ? props.hideLabel : props.showLabel}
+        title={props.visible ? props.hideLabel : props.showLabel}
+      >
+        {props.visible ? <EyeOff size={18} /> : <Eye size={18} />}
+      </button>
+    </div>
+  );
+}
+
+function ResendRow(props: { resendIn: number; lang: Language; t: (typeof translations)['bn']; onResend: () => void }) {
+  return (
+    <p className="auth-resend">
+      {props.resendIn > 0 ? (
+        <span>{props.t.resendIn.replace('{s}', formatNum(props.resendIn, props.lang, 0))}</span>
+      ) : (
+        <button type="button" className="link-btn" onClick={props.onResend}>
+          {props.t.resendCode}
+        </button>
+      )}
+    </p>
+  );
+}

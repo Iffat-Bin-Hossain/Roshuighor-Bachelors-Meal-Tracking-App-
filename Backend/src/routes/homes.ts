@@ -3,6 +3,7 @@ import { query } from '../config/db.js';
 import { authenticateToken, AuthRequest } from '../middleware/auth.js';
 import { generateInviteCode } from '../utils/invite.js';
 import { parseParamId, parseParamString } from '../utils/params.js';
+import { todayDhaka } from '../utils/validation.js';
 
 const router = Router();
 
@@ -12,7 +13,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response): Pro
     const userId = req.user?.id;
     const { name, address, description } = req.body;
 
-    if (!name || !name.trim()) {
+    if (!name || typeof name !== 'string' || !name.trim()) {
       res.status(400).json({ success: false, message: 'Home name is required' });
       return;
     }
@@ -28,7 +29,7 @@ router.post('/', authenticateToken, async (req: AuthRequest, res: Response): Pro
       `INSERT INTO homes (name, address, description, invite_code, created_by_user_id)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [name.trim(), address?.trim() || null, description?.trim() || null, inviteCode, userId]
+      [String(name).trim().slice(0, 150), address?.trim() || null, description?.trim() || null, inviteCode, userId]
     );
 
     const home = homeResult.rows[0];
@@ -90,7 +91,7 @@ router.get('/invite/:code', async (req, res): Promise<void> => {
     );
 
     if (result.rows.length === 0) {
-      res.status(404).json({ success: false, message: 'Invalid invite code or link' });
+      res.status(404).json({ success: false, code: 'INVITE_NOT_FOUND', message: 'Invalid invite code or link' });
       return;
     }
 
@@ -107,8 +108,8 @@ router.post('/join', authenticateToken, async (req: AuthRequest, res: Response):
     const userId = req.user?.id;
     const { invite_code } = req.body;
 
-    if (!invite_code) {
-      res.status(400).json({ success: false, message: 'Invite code is required' });
+    if (!invite_code || typeof invite_code !== 'string') {
+      res.status(400).json({ success: false, code: 'INVITE_NOT_FOUND', message: 'Invite code is required' });
       return;
     }
 
@@ -118,7 +119,7 @@ router.post('/join', authenticateToken, async (req: AuthRequest, res: Response):
     );
 
     if (homeResult.rows.length === 0) {
-      res.status(404).json({ success: false, message: 'Home not found for this invite link' });
+      res.status(404).json({ success: false, code: 'INVITE_NOT_FOUND', message: 'Home not found for this invite link' });
       return;
     }
 
@@ -151,6 +152,17 @@ router.post('/join', authenticateToken, async (req: AuthRequest, res: Response):
         [home.id, userId]
       );
     }
+
+    // Add the new member to every running/upcoming mess cycle from today onwards
+    await query(
+      `INSERT INTO meal_records (mess_cycle_id, user_id, date, breakfast, lunch, dinner, guest_meals)
+       SELECT mc.id, $2, d::date, 0, 1, 1, 0
+       FROM mess_cycles mc
+       CROSS JOIN LATERAL generate_series(GREATEST(mc.start_date, $3::date), mc.end_date, INTERVAL '1 day') AS d
+       WHERE mc.home_id = $1 AND mc.end_date >= $3::date
+       ON CONFLICT (mess_cycle_id, user_id, date) DO NOTHING`,
+      [home.id, userId, todayDhaka()]
+    );
 
     res.json({
       success: true,

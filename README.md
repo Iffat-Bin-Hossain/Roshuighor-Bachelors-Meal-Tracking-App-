@@ -6,7 +6,8 @@ Bachelor meal tracking and expense management system for shared apartments and b
 
 ## Features
 
-- **Authentication**: Sign up and sign in with email validation, flexible usernames, and secure passwords.
+- **Authentication**: Sign up with real email verification (6-digit code), sign in, and forgot/reset password by email. Emails are bilingual (follow the user's language) and branded with the রসুইঘর logo.
+- **Installable PWA**: Web manifest + service worker (offline app shell, install button, offline banner).
 - **Homes & Groups**: Create a home group and invite members via Telegram-style shareable links (`?join=HOME-XXXXXX`).
 - **Mess Cycles**: Default 10-day customizable cycles. Any home member can start a new cycle.
 - **Meal Tracking**: Quick daily meal toggle (Breakfast, Lunch, Dinner, Guest) and full cycle meal matrix.
@@ -52,7 +53,28 @@ npm install
 npm run dev
 ```
 
+- Copy `Backend/.env.example` to `Backend/.env` and fill it in.
 - Server runs on `http://localhost:5000`
+- Schema changes are applied automatically on startup (`src/config/schema.ts`).
+
+#### Email (SMTP)
+
+Without SMTP settings (development), emails are **printed to the backend console** instead of being sent, so you can copy the code from there. In production (`NODE_ENV=production`) SMTP is required.
+
+Gmail setup:
+1. Turn on 2-Step Verification on the Google account.
+2. Create an App Password at https://myaccount.google.com/apppasswords.
+3. In `Backend/.env`:
+   ```env
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=465
+   SMTP_SECURE=true
+   SMTP_USER=you@gmail.com
+   SMTP_PASS=your16charapppassword
+   MAIL_FROM="রসুইঘর (Rosuighor) <you@gmail.com>"
+   CLIENT_URL=https://your-frontend-url
+   ```
+Any SMTP provider works (Brevo, Mailgun, SES, Zoho…). Set the same variables on your hosting provider for production.
 - Health check: `http://localhost:5000/api/health`
 
 ### 3. Web Frontend

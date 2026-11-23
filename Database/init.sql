@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS users (
     avatar_url TEXT,
     language_pref VARCHAR(10) DEFAULT 'bn',
     theme_pref VARCHAR(10) DEFAULT 'light',
+    email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    password_changed_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -95,7 +97,20 @@ CREATE TABLE IF NOT EXISTS daily_menus (
     UNIQUE(mess_cycle_id, date, meal_type)
 );
 
+-- One-time email codes (signup verification & password reset). Only HMAC hashes are stored.
+CREATE TABLE IF NOT EXISTS email_otps (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    purpose VARCHAR(20) NOT NULL, -- 'verify', 'reset'
+    code_hash VARCHAR(128) NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    consumed_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_email_otps_user_purpose ON email_otps(user_id, purpose, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_home_invite_code ON homes(invite_code);
 CREATE INDEX IF NOT EXISTS idx_home_members_user ON home_members(user_id);
 CREATE INDEX IF NOT EXISTS idx_mess_cycles_home ON mess_cycles(home_id);

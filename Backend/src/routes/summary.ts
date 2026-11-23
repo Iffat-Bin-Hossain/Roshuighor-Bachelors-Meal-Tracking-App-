@@ -1,14 +1,14 @@
 import { Router, Response } from 'express';
 import { query } from '../config/db.js';
-import { authenticateToken, AuthRequest } from '../middleware/auth.js';
-import { parseParamId } from '../utils/params.js';
+import { authenticateToken } from '../middleware/auth.js';
+import { requireMessMember, MessRequest } from '../middleware/access.js';
 
 const router = Router();
 
 // Full summary & settlement calculations for a mess cycle
-router.get('/:messId', authenticateToken, async (req: AuthRequest, res: Response): Promise<void> => {
+router.get('/:messId', authenticateToken, requireMessMember(), async (req: MessRequest, res: Response): Promise<void> => {
   try {
-    const messId = parseParamId(req.params.messId);
+    const messId = req.mess!.id;
 
     // 1. Fetch Mess Cycle
     const cycleRes = await query('SELECT * FROM mess_cycles WHERE id = $1', [messId]);
@@ -18,14 +18,18 @@ router.get('/:messId', authenticateToken, async (req: AuthRequest, res: Response
     }
     const mess = cycleRes.rows[0];
 
-    // 2. Fetch Members of this home
+    // 2. Members to settle: active members + anyone who has meals/deposits in this cycle
+    //    (so a member who left mid-cycle still appears and the totals add up)
     const membersRes = await query(
       `SELECT u.id, u.name, u.email, u.phone
-       FROM home_members hm
-       JOIN users u ON hm.user_id = u.id
-       WHERE hm.home_id = $1 AND hm.status = 'active'
+       FROM users u
+       WHERE u.id IN (
+         SELECT user_id FROM home_members WHERE home_id = $1 AND status = 'active'
+         UNION SELECT user_id FROM meal_records WHERE mess_cycle_id = $2 AND total_meals > 0
+         UNION SELECT user_id FROM deposits WHERE mess_cycle_id = $2
+       )
        ORDER BY u.name ASC`,
-      [mess.home_id]
+      [mess.home_id, messId]
     );
 
     // 3. Total Bazaar Expenses
@@ -126,7 +130,7 @@ router.get('/:messId', authenticateToken, async (req: AuthRequest, res: Response
     });
   } catch (error) {
     console.error('Summary calculation error:', error);
-    res.status(500).json({ success: false, message: 'Failed to calculate summary' });
+    res.status(500).json({ success: false, code: 'SERVER_ERROR', message: 'Failed to calculate summary' });
   }
 });
 
